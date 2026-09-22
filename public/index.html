@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智简简历 · AI Resume Studio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563eb'/%3E%3Ctext x='16' y='23' font-size='19' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'%3E简%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ==================== 顶部工具栏 ==================== -->
+<header id="toolbar">
+  <div class="brand">
+    <div class="logo">简</div>
+    <div class="brand-text"><b>智简简历</b><small>AI RESUME STUDIO</small></div>
+  </div>
+
+  <div class="tb-group">
+    <div class="dropdown" id="importMenu">
+      <button class="btn primary" id="btnImport">导入 / 新建</button>
+      <div class="menu">
+        <div class="menu-title">上传简历（原样还原）</div>
+        <button data-act="import-pdf">上传 PDF 简历</button>
+        <button data-act="import-docx">上传 Word 简历 (.docx)</button>
+        <div class="menu-title">新建简历</div>
+        <button data-act="import-md">从 Markdown 新建</button>
+        <button data-act="templates">从模板库新建</button>
+        <button data-act="blank">空白简历</button>
+        <div class="menu-title">项目文件</div>
+        <button data-act="import-project">导入项目 (.json)</button>
+        <button data-act="save-project">保存项目</button>
+        <div class="menu-title">管理</div>
+        <button data-act="new-reset" class="danger">清空当前简历</button>
+      </div>
+    </div>
+    <button class="btn" id="btnAddSection">+ 新增板块</button>
+  </div>
+
+  <div class="tb-group" style="margin-left:6px;">
+    <button class="icon-btn" id="btnUndo" title="撤销 Ctrl+Z">↺</button>
+    <button class="icon-btn" id="btnRedo" title="重做 Ctrl+Y">↻</button>
+  </div>
+
+  <div class="tb-group zoom">
+    <button class="icon-btn" id="zoomOut" title="缩小">−</button>
+    <span id="zoomLabel">100%</span>
+    <button class="icon-btn" id="zoomIn" title="放大">＋</button>
+    <button class="btn small" id="zoomFit" title="适配宽度">适配</button>
+    <button class="btn small toggle" id="btnHighlight" title="显示解析出的文本块边框（便于定位可编辑内容）">原文框</button>
+  </div>
+
+  <div class="tb-group" style="margin-left:auto;">
+    <div class="dropdown" id="exportMenu">
+      <button class="btn primary2" id="btnExport">导出</button>
+      <div class="menu" style="left:auto; right:0;">
+        <button data-act="export-pdf">导出 PDF（打印另存）</button>
+        <button data-act="export-png">导出长图 PNG（合并一页）</button>
+        <button data-act="export-png-pages">导出逐页 PNG</button>
+        <button data-act="export-word">导出 Word (.doc)</button>
+        <div class="menu-title">Markdown</div>
+        <button data-act="export-md">导出 Markdown</button>
+        <button data-act="copy-md">复制 Markdown</button>
+      </div>
+    </div>
+    <button class="btn" id="btnAiSettings" title="AI 服务设置">AI 设置</button>
+  </div>
+</header>
+
+<!-- ==================== 主区域 ==================== -->
+<main id="main">
+  <section id="canvasArea">
+    <div id="pages"></div>
+    <div id="emptyState" class="empty-state">
+      <h2>上传简历 · 原样还原 · 自由编辑 · AI 按 JD 改写</h2>
+      <div class="sub">
+        上传 PDF / Word 简历后 100% 还原原版排版，每个文字、图片、分割线都可移动和修改；<br>
+        再粘贴目标岗位 JD，AI 自动针对性改写，细微处手动微调即可。
+      </div>
+      <div class="empty-cards">
+        <div class="empty-card" data-act="import-pdf">
+          <div class="ic pdf">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 11h2M9 19h4"/></svg>
+          </div>
+          <b>上传 PDF 简历</b>
+          <small>原版 1:1 还原，逐行可编辑</small>
+        </div>
+        <div class="empty-card" data-act="import-docx">
+          <div class="ic doc">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+          </div>
+          <b>上传 Word 简历</b>
+          <small>docx 精确转 PDF 还原</small>
+        </div>
+        <div class="empty-card" data-act="templates">
+          <div class="ic tpl">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          </div>
+          <b>从模板新建</b>
+          <small>多套风格模板快速起稿</small>
+        </div>
+      </div>
+      <p class="privacy">隐私说明：简历内容默认只在当前浏览器本地处理，不上传任何服务器；只有在你主动点击「AI 优化」时，所选内容才会发送到你自行配置的 AI 服务（豆包 / DeepSeek / 千问 / OpenAI 兼容接口）。</p>
+    </div>
+
+    <div id="loadingOverlay" class="loading hidden">
+      <div class="spinner"></div>
+      <div id="loadingText">处理中…</div>
+    </div>
+  </section>
+
+  <aside id="panel">
+    <div class="panel-tabs">
+      <button data-tab="style" class="active">样式</button>
+      <button data-tab="ai">AI 优化</button>
+      <button data-tab="page">页面 / 模板</button>
+      <button data-tab="settings">设置</button>
+    </div>
+    <div class="panel-body">
+      <div id="tab-style" class="tab-pane active"></div>
+      <div id="tab-ai" class="tab-pane"></div>
+      <div id="tab-page" class="tab-pane"></div>
+      <div id="tab-settings" class="tab-pane"></div>
+    </div>
+  </aside>
+</main>
+
+<!-- 跟随选区的快捷工具条 -->
+<div id="floatBar" class="hidden"></div>
+
+<!-- 隐藏输入 -->
+<input type="file" id="fileInput" accept=".pdf,.docx,.doc,.json,.md,.txt" hidden>
+<input type="file" id="imageInput" accept="image/*" hidden>
+<input type="file" id="jdInput" accept=".txt,.pdf,.md,.docx,.doc" hidden>
+
+<!-- 打印导出容器 -->
+<div id="printRoot"></div>
+
+<!-- 弹窗容器 -->
+<div id="modalRoot"></div>
+
+<!-- Toast -->
+<div id="toasts"></div>
+
+<script src="vendor/pdf.min.js"></script>
+<script src="vendor/html2canvas.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/docx-preview.min.js"></script>
+<script src="vendor/marked.min.js"></script>
+<script src="js/state.js"></script>
+<script src="js/templates.js"></script>
+<script src="js/importers.js"></script>
+<script src="js/render.js"></script>
+<script src="js/editor.js"></script>
+<script src="js/exporters.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
