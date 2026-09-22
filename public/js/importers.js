@@ -108,6 +108,7 @@ window.RS = window.RS || {};
       scanDocFonts(data); // 还原 WPS 子集字体名（g_dX_fY → 真实字体）
       const pdf = await pdfjsLib.getDocument({ data }).promise;
       const pages = [];
+      let degraded = false;
       RS.render.clearCanvases();
 
       for (let i = 1; i <= pdf.numPages; i++) {
@@ -116,18 +117,28 @@ window.RS = window.RS || {};
         const pageW_mm = viewport.width * MM_PER_PT;
         const pageH_mm = viewport.height * MM_PER_PT;
 
-        // 1) 渲染原版位图（按设备像素比提升清晰度）
+        // 1) 渲染原版位图（按设备像素比提升清晰度）；渲染慢/失败时降级为纯文本编辑模式
         const DPR = Math.min(2.5, window.devicePixelRatio || 1);
         const cw = Math.max(1, Math.round(pageW_mm * BASE_DPI / 25.4 * DPR));
         const ch = Math.max(1, Math.round(pageH_mm * BASE_DPI / 25.4 * DPR));
         const bgCanvas = document.createElement('canvas');
         bgCanvas.width = cw; bgCanvas.height = ch;
         const renderScale = cw / viewport.width;
-        await page.render({ canvasContext: bgCanvas.getContext('2d'), viewport: page.getViewport({ scale: renderScale }) }).promise;
+        const renderTask = page.render({ canvasContext: bgCanvas.getContext('2d'), viewport: page.getViewport({ scale: renderScale }) });
+        const renderOk = await Promise.race([
+          renderTask.promise.then(() => true),
+          new Promise((r) => setTimeout(() => r(false), 20000)),
+        ]);
+        if (!renderOk) {
+          try { renderTask.cancel(); } catch (e) {}
+          degraded = true;
+          console.warn('PDF 位图渲染超时，降级为纯文本编辑模式');
+        }
 
         // 2) 提取文本 → 行元素
         const textContent = await page.getTextContent();
         const lineEls = textToElements(textContent.items, viewport, pageW_mm, pageH_mm);
+        if (!renderOk) for (const el of lineEls) el.dirty = true; // 无底图时文字直接可见可编辑
 
         // 3) 提取图片元素
         let imgEls = [];
@@ -149,7 +160,9 @@ window.RS = window.RS || {};
       RS.commit();
       RS.render.fitWidth();
       hideLoading();
-      toast('已导入 PDF，共 ' + pages.length + ' 页，与原版 100% 一致。点击任意文字/图片即可编辑移动。', 'ok');
+      toast(degraded
+        ? '已导入 PDF，共 ' + pages.length + ' 页。当前环境位图渲染较慢，已切换为「纯文本编辑模式」——文字已全部可见可编辑，排版位置保持原版。'
+        : '已导入 PDF，共 ' + pages.length + ' 页，与原版 100% 一致。点击任意文字/图片即可编辑移动。', degraded ? 'warn' : 'ok');
       if (RS.ui) { RS.ui.renderPagePane(); RS.ui.switchTab('style'); }
     } catch (e) {
       console.error(e);
