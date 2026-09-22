@@ -81,9 +81,9 @@ window.RS = window.RS || {};
       pane.innerHTML =
         '<div class="empty-pane">' +
         '<b>尚未选中元素</b>' +
-        '在左侧画布点击任意文字 / 图片 / 分割线即可编辑。<br><br>' +
+        '在左侧画布点击任意文字 / 图片 / 分割线即可选中并编辑。<br><br>' +
         '技巧：<br>' +
-        '· 双击文字 = 直接改内容<br>' +
+        '· 单击文字 = 光标直接进入，所见即所得<br>' +
         '· 拖动 = 移动位置，8 个手柄 = 缩放<br>' +
         '· 选中后点右上「AI 优化」可智能改写<br>' +
         '· 支持 Ctrl+Z 撤销、Ctrl+D 复制、Delete 删除' +
@@ -391,13 +391,25 @@ window.RS = window.RS || {};
     let h = '';
     h += '<div class="panel-title">AI 服务配置</div>';
     h += '<div class="set-card">';
-    h += '<div class="provider-radio">';
-    for (const key of Object.keys(p)) {
-      h += '<label class="' + (s.provider === key ? 'checked' : '') + '">' +
-        '<input type="radio" name="provider" value="' + key + '"' + (s.provider === key ? ' checked' : '') + '>' +
-        '<span>' + esc(p[key].label) + '</span></label>';
+    const groups = [
+      { key: 'free', title: '完全免费 · 注册即用', tag: 'free-tag', tagText: '零充值' },
+      { key: 'trial', title: '新用户赠额度', tag: 'trial-tag', tagText: '送额度' },
+      { key: 'custom', title: '自定义 / OpenAI 兼容', tag: '', tagText: '' },
+    ];
+    for (const g of groups) {
+      const keys = Object.keys(p).filter(k => (p[k].group || 'custom') === g.key);
+      if (!keys.length) continue;
+      h += '<div class="provider-group-title">' + g.title + (g.tag ? ' <span class="' + g.tag + '">' + g.tagText + '</span>' : '') + '</div>';
+      h += '<div class="provider-radio">';
+      for (const key of keys) {
+        h += '<label class="' + (s.provider === key ? 'checked' : '') + '">' +
+          '<input type="radio" name="provider" value="' + key + '"' + (s.provider === key ? ' checked' : '') + '>' +
+          '<span>' + esc(p[key].label) + '</span>' +
+          (p[key].reg ? '<a class="reg-link" href="' + p[key].reg + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">拿 Key ↗</a>' : '') +
+          '</label>';
+      }
+      h += '</div>';
     }
-    h += '</div>';
     h += '<div class="note" id="providerTip">' + esc(p[s.provider] ? p[s.provider].tip : '') + '</div>';
     h += '<div class="field" style="margin-top:10px;"><label>模型</label><input type="text" id="setModel" placeholder="留空使用默认模型" value="' + esc(s.model || '') + '"></div>';
     h += '<div class="field"><label>接口地址（OpenAI 兼容时填写）</label><input type="text" id="setBaseUrl" placeholder="https://api.openai.com/v1" value="' + esc(s.baseUrl || '') + '"></div>';
@@ -416,7 +428,7 @@ window.RS = window.RS || {};
       '· 解析、渲染、编辑、导出全部在本机完成<br>' +
       '· 自动保存在浏览器本地存储，换设备/浏览器不共享<br>' +
       '· 仅当你点击「AI 优化」时，内容才会发送到你配置的 AI 服务<br>' +
-      '<b>可接入：</b>豆包（火山方舟）、DeepSeek、千问（通义）、任意 OpenAI 兼容接口。' +
+      '<b>可接入：</b>完全免费（智谱 GLM / 硅基流动）、新用户赠额度（豆包 / DeepSeek / 千问）、任意 OpenAI 兼容接口；也可用「网页版免费 AI」工作流（登录 DeepSeek / 豆包网页版，无需 Key）。' +
       '</div></div>';
 
     h += '<div class="panel-title">数据管理</div>';
@@ -491,8 +503,18 @@ window.RS = window.RS || {};
   function renderAiPane() {
     const pane = document.getElementById('tab-ai');
     pane.innerHTML =
-      '<div class="ai-hero"><h3>AI 智能优化</h3><p>粘贴目标岗位 JD → AI 分析匹配度并逐条给出简历改写建议，你确认后再应用；也可润色选中段落、或直接与 AI 对话。</p></div>' +
-      '<div class="ai-block"><h4>岗位定向优化 <span class="tag">核心功能</span></h4>' +
+      '<div class="ai-hero"><h3>AI 智能优化</h3><p>两种方式任选：<b>① 网页版免费 AI</b>（登录 DeepSeek / 豆包账号即可，无需 Key）；<b>② API 模式</b>（豆包 / DeepSeek / 千问 / 智谱 / 硅基流动，免费额度或付费 tokens）。</p></div>' +
+      '<div class="ai-block"><h4>网页版免费 AI <span class="tag">无需 Key</span></h4>' +
+      '<p class="note" style="margin-top:0;">用 DeepSeek / 豆包等网页版（登录账号即可免费对话），把优化结果粘回来一键应用：</p>' +
+      '<div class="ai-actions">' +
+      '<button class="btn-ghost" id="webCopyPrompt">① 复制简历+JD 提示词</button>' +
+      '<button class="btn-ghost" id="webOpenDsk">② 打开 DeepSeek 网页版</button>' +
+      '<button class="btn-ghost" id="webOpenDby">② 打开豆包网页版</button>' +
+      '</div>' +
+      '<textarea id="webResult" style="margin-top:8px;" placeholder="③ 把网页版 AI 给你的 JSON 优化结果粘贴到这里（格式见复制出的提示词要求），然后点「解析并应用」"></textarea>' +
+      '<div class="ai-actions"><button class="btn-ai" id="webApply">④ 解析并应用结果</button></div>' +
+      '<div id="webOut"></div></div>' +
+      '<div class="ai-block"><h4>岗位定向优化 <span class="tag">API 模式</span></h4>' +
       '<textarea id="aiJdText" placeholder="把目标岗位 JD（职位描述）粘贴到这里…也可以上传 JD 文件（txt / pdf / docx）"></textarea>' +
       '<div class="ai-actions">' +
       '<button class="btn btn-sm" id="aiJdUpload">上传 JD 文件</button>' +
@@ -526,6 +548,40 @@ window.RS = window.RS || {};
     document.getElementById('aiRunPolish').onclick = () => RS.ai.runPolish(RS.state.selected.slice(), document.getElementById('aiPolishTone').value);
     document.getElementById('aiChatSend').onclick = () => sendChat();
     document.getElementById('aiChatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } });
+
+    /* 网页版免费 AI 工作流 */
+    document.getElementById('webCopyPrompt').onclick = () => {
+      const jd = document.getElementById('aiJdText') ? document.getElementById('aiJdText').value : '';
+      const prompt = RS.ai.buildWebPrompt(jd);
+      if (!prompt) { RS.ui.toast('当前简历为空，请先导入简历', 'warn'); return; }
+      const done = () => RS.ui.toast('提示词已复制，去网页版粘贴给 AI 吧（记得把 AI 返回的 JSON 复制回来）', 'ok');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(prompt).then(done).catch(() => fallbackCopy(prompt, done));
+      } else fallbackCopy(prompt, done);
+    };
+    document.getElementById('webOpenDsk').onclick = () => window.open('https://chat.deepseek.com', '_blank', 'noopener');
+    document.getElementById('webOpenDby').onclick = () => window.open('https://www.doubao.com/chat/', '_blank', 'noopener');
+    document.getElementById('webApply').onclick = () => {
+      const res = RS.ai.applyWebRevisions(document.getElementById('webResult').value);
+      const out = document.getElementById('webOut');
+      if (res.ok) {
+        out.innerHTML = '<div class="note" style="color:var(--ok);">已应用 ' + res.applied + ' / ' + res.total + ' 条修改（可 Ctrl+Z 撤销）。剩余细微差异可在画布上单击文字直接微调。</div>';
+        RS.ui.toast('已应用 ' + res.applied + ' 条网页版 AI 修改', 'ok');
+      } else {
+        out.innerHTML = '<div class="note" style="color:var(--danger);">' + esc(res.reason || '解析失败') + '</div>';
+        RS.ui.toast('应用失败：' + (res.reason || '解析失败'), 'err');
+      }
+    };
+  }
+
+  function fallbackCopy(text, done) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { RS.ui.toast('复制失败，请手动复制', 'warn'); }
+    ta.remove();
   }
 
   const SAMPLE_JD = '【产品经理实习生】\n岗位职责：\n1. 负责 C 端产品的需求分析与产品设计，输出 PRD；\n2. 推动新用户增长策略落地，负责激活、留存等核心指标优化；\n3. 与研发、设计、运营紧密协作，跟进项目排期与上线；\n4. 通过数据分析驱动产品迭代，搭建数据看板。\n任职要求：\n1. 本科及以上学历，2025 届优先，有互联网产品实习经验；\n2. 熟悉 SQL，能独立完成数据分析；\n3. 具备 A/B 实验设计与结果解读能力；\n4. 逻辑清晰、沟通能力强，有责任心。';

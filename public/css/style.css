@@ -135,7 +135,19 @@ body.hl .el-ghost { outline: 1px dashed rgba(37,99,235,.45); }
 .el-html table { border-collapse: collapse; }
 .el-html td, .el-html th { border: 1px solid #999; padding: 2px 6px; }
 
-.el.selected { outline: 1.5px solid var(--primary); }
+.el.selected {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 1px rgba(37,99,235,.18), 0 4px 14px rgba(37,99,235,.14);
+}
+.el.editing { outline: 2px solid var(--primary); outline-offset: 1px; cursor: text; }
+.el-text.editing, .el-text.editing .t { user-select: text; -webkit-user-select: text; }
+.el-text.editing { overflow: visible; }
+.el-badge {
+  position: absolute; top: -25px; right: -1px; background: var(--primary); color: #fff;
+  font-size: 10px; line-height: 1; padding: 4px 7px; border-radius: 5px 5px 0 5px;
+  z-index: 95; pointer-events: none; white-space: nowrap; box-shadow: 0 2px 6px rgba(37,99,235,.35);
+}
 .el.locked { cursor: not-allowed; }
 
 /* 选区手柄 */
@@ -166,6 +178,8 @@ body.hl .el-ghost { outline: 1px dashed rgba(37,99,235,.45); }
 #floatBar .fb-btn.active { background: var(--primary); color: #fff; }
 #floatBar .fb-sep { width: 1px; height: 16px; background: rgba(255,255,255,.2); margin: 0 3px; }
 #floatBar select.fb-sel { background: #1e293b; color: #e2e8f0; border: 0; border-radius: 5px; height: 24px; font-size: 12px; }
+#floatBar select.fb-font { max-width: 122px; }
+#floatBar input.fb-num { width: 46px; background: #1e293b; color: #e2e8f0; border: 0; border-radius: 5px; height: 24px; font-size: 12px; padding: 0 4px; text-align: center; }
 #floatBar input[type="color"] { width: 24px; height: 24px; border: 0; background: none; padding: 0; cursor: pointer; }
 
 /* ============ 右侧面板 ============ */
@@ -365,6 +379,11 @@ body.hl .el-ghost { outline: 1px dashed rgba(37,99,235,.45); }
 }
 .provider-radio label input { accent-color: var(--primary); }
 .provider-radio label.checked { border-color: var(--primary); background: var(--primary-light); color: var(--primary-dark); font-weight: 600; }
+.provider-radio label .reg-link { margin-left: auto; font-size: 10px; color: var(--ink-3); text-decoration: none; white-space: nowrap; }
+.provider-radio label .reg-link:hover { color: var(--primary); }
+.provider-group-title { font-size: 11px; color: var(--ink-3); margin: 12px 0 6px; display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.provider-group-title .free-tag { color: #065f46; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 0 6px; border-radius: 10px; font-size: 10px; }
+.provider-group-title .trial-tag { color: #92400e; background: #fffbeb; border: 1px solid #fde68a; padding: 0 6px; border-radius: 10px; font-size: 10px; }
 
 .empty-pane { text-align: center; color: var(--ink-3); font-size: 12px; padding: 26px 8px; line-height: 1.7; }
 .empty-pane b { display: block; font-size: 13px; color: var(--ink-2); margin-bottom: 4px; }

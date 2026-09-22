@@ -90,14 +90,16 @@ window.RS = window.RS || {};
     }));
   }
   function restore(snap) {
+    // 撤销/重做后保留仍存在的选中元素，避免"改完看不到选中标签在哪"
+    const keep = RS.state.selected.filter(id => snap.pages.some(p => p.elements.some(e => e.id === id)));
     RS.state.pages = snap.pages;
     RS.state.pageW = snap.pageW;
     RS.state.pageH = snap.pageH;
     RS.state.projectName = snap.projectName;
-    RS.state.selected = [];
+    RS.state.selected = keep.length ? keep : [];
     RS.state.dirty = true;
     if (RS.render) RS.render.renderAll();
-    if (RS.ui) { RS.ui.updateUndoRedo(); RS.ui.renderStylePane(); RS.ui.hideFloatBar(); }
+    if (RS.ui) { RS.ui.updateUndoRedo(); RS.ui.renderStylePane(); if (!keep.length) RS.ui.hideFloatBar(); }
   }
   // 基线快照：任何操作前的初始状态，保证 undo 可回到最初
   function pushBaseline() {
@@ -109,13 +111,13 @@ window.RS = window.RS || {};
     redoStack.length = 0;
     pushBaseline();
   };
-  RS.commit = function (label) {
+  RS.commit = function (label, noRender) {
     pushBaseline();
     undoStack.push(snapshot());
     if (undoStack.length > 300) undoStack.shift();
     redoStack.length = 0;
     RS.state.dirty = true;
-    if (RS.render) RS.render.renderAll();
+    if (RS.render && !noRender) RS.render.renderAll();
     if (RS.ui) RS.ui.updateUndoRedo();
     scheduleAutosave();
   };

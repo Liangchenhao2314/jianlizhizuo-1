@@ -12,12 +12,12 @@ window.RS = window.RS || {};
   const RS = window.RS;
 
   const PROVIDERS = {
-    zhipu: { label: '智谱 GLM（免费）', base: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash', tip: '完全免费：open.bigmodel.cn 注册即可用 GLM-4-Flash 免费模型，无需充值' },
-    siliconflow: { label: '硅基流动（免费）', base: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-7B-Instruct', tip: '免费模型限速但永久免费；注册送体验额度，可换更强模型' },
-    doubao: { label: '豆包（火山方舟）', base: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-1-5-pro-32k-250115', tip: '火山方舟控制台创建推理接入点后，模型填接入点 ID 或模型名；新用户有免费试用额度' },
-    deepseek: { label: 'DeepSeek', base: 'https://api.deepseek.com', model: 'deepseek-chat', tip: 'API 新用户常有活动赠送额度；网页版聊天免费但不能当 API 用' },
-    qwen: { label: '千问（通义）', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus', tip: 'DashScope 兼容模式；新用户送免费 token 额度，qwen-turbo 更便宜' },
-    openai: { label: 'OpenAI 兼容', base: 'https://api.openai.com/v1', model: 'gpt-4o-mini', tip: '任何 OpenAI 兼容接口：自定义 baseUrl + 模型 + Key（如硅基流动、智谱、本地 Ollama）' },
+    zhipu: { label: '智谱 GLM（免费）', base: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash', group: 'free', reg: 'https://open.bigmodel.cn/usercenter/apikeys', tip: '完全免费：open.bigmodel.cn 注册即可用 GLM-4-Flash 免费模型，无需充值' },
+    siliconflow: { label: '硅基流动（免费）', base: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-7B-Instruct', group: 'free', reg: 'https://cloud.siliconflow.cn/account/ak', tip: '免费模型限速但永久免费；注册送体验额度，可换更强模型' },
+    doubao: { label: '豆包（火山方舟）', base: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-1-5-pro-32k-250115', group: 'trial', reg: 'https://console.volcengine.com/ark', tip: '火山方舟控制台创建推理接入点后，模型填接入点 ID 或模型名；新用户有免费试用额度' },
+    deepseek: { label: 'DeepSeek', base: 'https://api.deepseek.com', model: 'deepseek-chat', group: 'trial', reg: 'https://platform.deepseek.com', tip: 'API 新用户常有活动赠送额度；网页版聊天免费但不能当 API 用' },
+    qwen: { label: '千问（通义）', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus', group: 'trial', reg: 'https://bailian.console.aliyun.com', tip: 'DashScope 兼容模式；新用户送免费 token 额度，qwen-turbo 更便宜' },
+    openai: { label: 'OpenAI 兼容', base: 'https://api.openai.com/v1', model: 'gpt-4o-mini', group: 'custom', tip: '任何 OpenAI 兼容接口：自定义 baseUrl + 模型 + Key（如硅基流动、智谱、本地 Ollama）' },
   };
 
   /* ---------- 核心调用 ---------- */
@@ -322,6 +322,61 @@ JSON 结构（严格遵守）：
     return true;
   }
 
+  /* ---------- 网页版免费 AI 工作流（无需 API Key） ---------- */
+  // 生成可直接粘贴到 DeepSeek/豆包网页版的提示词
+  function buildWebPrompt(jdText) {
+    const sections = RS.exporters.buildResumeStructure(7000);
+    if (!sections.length) return null;
+    const jd = (jdText && jdText.trim()) ? jdText : '（未提供 JD：请直接给出通用的简历优化建议）';
+    return '你是资深简历优化专家。请针对下面的简历与目标岗位 JD，只输出一个 JSON 对象：\n' +
+      '{\n' +
+      '  "analysis": "对 JD 的解读与匹配判断（150字内）",\n' +
+      '  "revisions": [{"old":"简历中的原句（必须一字不差摘录原文）","new":"改写后的句子","reason":"理由（60字内）"}],\n' +
+      '  "suggestions": ["无法靠改写解决的差距与补充建议"]\n' +
+      '}\n' +
+      '要求：old 必须与简历原文完全一致；不得编造经历、公司、数字；revisions 最多 12 条。\n\n' +
+      '# 简历结构（JSON）\n' + JSON.stringify(sections) + '\n\n# 目标岗位 JD\n' + jd;
+  }
+
+  // 把网页版 AI 返回的结果解析并应用（按 old 原文匹配元素，模糊匹配支持）
+  function applyWebRevisions(text) {
+    if (!text || !text.trim()) return { ok: false, applied: 0, total: 0, reason: '粘贴内容为空' };
+    let obj = null;
+    try { obj = JSON.parse(text); } catch (e) { /* 尝试从文本中提取 JSON */ }
+    if (!obj) {
+      const m = text.match(/\{[\s\S]*\}/);
+      if (m) { try { obj = JSON.parse(m[0]); } catch (e) {} }
+    }
+    if (!obj) return { ok: false, applied: 0, total: 0, reason: '没有解析到 JSON 结果，请让网页版 AI 按提示词要求的格式输出' };
+    const revs = Array.isArray(obj.revisions) ? obj.revisions : [];
+    if (!revs.length) return { ok: false, applied: 0, total: 0, reason: '结果中没有 revisions 建议' };
+    const all = RS.allElements().filter(e => e.type === 'text' && e.text && e.text.trim());
+    let applied = 0;
+    for (const r of revs) {
+      if (!r || typeof r.old !== 'string' || typeof r.new !== 'string') continue;
+      const oldT = r.old.trim();
+      if (!oldT) continue;
+      // 先精确匹配整块文本，再模糊匹配包含关系
+      let el = all.find(e => e.text.trim() === oldT);
+      if (!el) el = all.find(e => e.text.includes(oldT));
+      if (!el) continue;
+      if (el.text.trim() === oldT) {
+        el.text = r.new;
+      } else {
+        const i = el.text.indexOf(oldT);
+        el.text = el.text.slice(0, i) + r.new + el.text.slice(i + oldT.length);
+      }
+      if (!el.original) { el.original = { x: el.x, y: el.y, w: el.w, h: el.h }; el.dirty = true; }
+      el.dirty = true;
+      applied++;
+    }
+    if (applied) {
+      RS.render.renderAll();
+      RS.commit();
+    }
+    return { ok: applied > 0, applied, total: revs.length, reason: applied ? '' : '没有找到与 old 原文匹配的简历元素' };
+  }
+
   RS.ai = {
     PROVIDERS,
     callAI,
@@ -336,6 +391,8 @@ JSON 结构（严格遵守）：
     testConnection,
     applyRevision,
     applyAddition,
+    buildWebPrompt,
+    applyWebRevisions,
     POLISH_TONES,
   };
 })();
