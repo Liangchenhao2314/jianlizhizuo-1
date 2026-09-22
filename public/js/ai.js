@@ -247,6 +247,7 @@ JSON 结构（严格遵守）：
       if (!el || typeof ed.new_text !== 'string') continue;
       if (el.type !== 'text') continue;
       el.text = ed.new_text;
+      delete el.rich;
       if (!el.original) { el.original = { x: el.x, y: el.y, w: el.w, h: el.h }; }
       el.dirty = true;
       n++;
@@ -279,6 +280,7 @@ JSON 结构（严格遵守）：
     const el = RS.getEl(rev.id);
     if (!el) { RS.ui.toast('该元素已不存在（可能已被删除）', 'warn'); return false; }
     el.text = rev.new;
+    delete el.rich;
     if (!el.original) { el.original = { x: el.x, y: el.y, w: el.w, h: el.h }; }
     el.dirty = true;
     el.aiModified = true;
@@ -366,6 +368,7 @@ JSON 结构（严格遵守）：
         const i = el.text.indexOf(oldT);
         el.text = el.text.slice(0, i) + r.new + el.text.slice(i + oldT.length);
       }
+      delete el.rich;
       if (!el.original) { el.original = { x: el.x, y: el.y, w: el.w, h: el.h }; el.dirty = true; }
       el.dirty = true;
       applied++;

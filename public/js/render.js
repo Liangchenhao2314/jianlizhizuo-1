@@ -99,7 +99,7 @@ window.RS = window.RS || {};
       if (!visible) div.classList.add('el-ghost');
       const span = document.createElement('span');
       span.className = 't';
-      span.innerHTML = textToHTML(el.text);
+      span.innerHTML = el.rich || textToHTML(el.text);
       span.style.fontFamily = fontStack(el.fontFamily);
       span.style.fontSize = pt2px(el.fontSizePt) + 'px';
       if (el.bold) span.style.fontWeight = '700';

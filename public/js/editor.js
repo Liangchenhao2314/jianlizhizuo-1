@@ -191,7 +191,7 @@ window.RS = window.RS || {};
         syncEditHeight(node, span, editingEl);
         if (editingEl.original) RS.render.redrawMasks(RS.getPage(editingEl.page));
       }
-      RS.commit(true); // 不重绘，保持编辑
+      RS.commit(undefined, true); // 第二参 true = 不重绘，保持编辑
     } else {
       RS.render.renderAll();
       RS.commit();
@@ -358,18 +358,25 @@ window.RS = window.RS || {};
   /* ================= 所见即所得行内编辑 ================= */
   function sanitizeInline(root) {
     // 输入法/浏览器可能插入 font 或带 font-family 的 span，导致"字体走样"：
-    // 剥离这些内联样式，字体统一由元素级 CSS 控制（只保留 b/i/u 语义）
+    // 剥离会破坏字体/颜色锁定的内联样式；保留 b/i/u/a 与纯 font-size（选区字号 A±）
     const walk = (n) => {
       const kids = Array.prototype.slice.call(n.childNodes || []);
       for (const c of kids) {
         if (c.nodeType === 1) {
-          if (c.tagName === 'FONT' || c.tagName === 'SPAN') {
+          if (c.tagName === 'FONT') {
+            // FONT 标签解包（保留文字）
+            const p = document.createElement('span');
+            while (c.firstChild) p.appendChild(c.firstChild);
+            c.parentNode.replaceChild(p, c);
+            walk(p);
+            continue;
+          }
+          if (c.tagName === 'SPAN') {
             const st = (c.getAttribute && (c.getAttribute('style') || '') || '').toLowerCase();
-            if (c.tagName === 'FONT' || /font-family|font-size|color|background|letter-spacing|line-height/i.test(st)) {
-              c.removeAttribute('style');
-              c.removeAttribute('face');
-              c.removeAttribute('size');
-              c.removeAttribute('color');
+            if (/font-family|color|background|letter-spacing|line-height|font-weight|font-style/i.test(st)) {
+              const fs = /font-size\s*:\s*([\d.]+)(?:px|pt)/i.exec(st);
+              if (fs) c.setAttribute('style', 'font-size:' + fs[1] + 'px');
+              else c.removeAttribute('style');
             }
           }
           walk(c);
@@ -377,6 +384,67 @@ window.RS = window.RS || {};
       }
     };
     walk(root);
+  }
+
+  /* 退出编辑时把内容净化为可持久化的富文本（只允许 b/i/u/a/span[font-size]/br/div） */
+  function cleanRich(html) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = html;
+    const allowed = { B: 1, I: 1, U: 1, A: 1, SPAN: 1, BR: 1, DIV: 1 };
+    const walk = (n) => {
+      for (const c of Array.from(n.children || [])) {
+        if (!allowed[c.tagName]) {
+          while (c.firstChild) n.insertBefore(c.firstChild, c);
+          n.removeChild(c);
+          continue;
+        }
+        if (c.tagName === 'SPAN') {
+          const st = (c.getAttribute('style') || '').toLowerCase();
+          const fs = /font-size\s*:\s*([\d.]+)(?:px|pt)/i.exec(st);
+          if (fs) c.setAttribute('style', 'font-size:' + fs[1] + 'px');
+          else c.removeAttribute('style');
+        } else if (c.tagName === 'A') {
+          const href = c.getAttribute('href');
+          if (!href || !/^https?:\/\//i.test(href)) {
+            while (c.firstChild) n.insertBefore(c.firstChild, c);
+            n.removeChild(c);
+            continue;
+          }
+          c.setAttribute('target', '_blank');
+          c.setAttribute('rel', 'noopener');
+          ['style', 'class'].forEach(a => c.removeAttribute(a));
+        } else if (c.tagName !== 'BR' && c.tagName !== 'DIV' && c.tagName !== 'B' && c.tagName !== 'I' && c.tagName !== 'U') {
+          ['style', 'class'].forEach(a => c.removeAttribute(a));
+        }
+        walk(c);
+      }
+    };
+    walk(tpl);
+    return tpl.innerHTML;
+  }
+  function hasFormat(html) {
+    return /<(?:b|i|u|a)\b/i.test(html) || /<span[^>]*style=/i.test(html);
+  }
+
+  /* 选区字号 ±0.5pt（Word 式局部字号） */
+  function bumpSelRange(r, delta) {
+    const host = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+    const base = parseFloat(getComputedStyle(host).fontSize) || 13;
+    const size = Math.max(6, Math.min(48, base + delta));
+    const span = document.createElement('span');
+    span.style.fontSize = size + 'px';
+    try {
+      r.surroundContents(span);
+    } catch (e) {
+      const frag = r.extractContents();
+      span.appendChild(frag);
+      r.insertNode(span);
+    }
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    const nr = document.createRange();
+    nr.selectNodeContents(span);
+    sel.addRange(nr);
   }
 
   function syncEditHeight(node, span, el) {
@@ -444,7 +512,9 @@ window.RS = window.RS || {};
     const span = node.querySelector('.t') || node;
     if (!span) return;
     editingId = id;
-    editOriginalText = (span.textContent || '');
+    // 有富文本（局部格式）时先渲染，再进入编辑，保证既有格式可见可继续编辑
+    span.innerHTML = el.rich || RS.render.textToHTML(el.text);
+    editOriginalText = span.innerText || span.textContent || '';
     node.classList.add('editing');
     node.classList.remove('el-ghost');
     // 进入编辑即对原版文字盖白底，编辑文字全量可见（所见即所得，不打字看不见）
@@ -497,6 +567,7 @@ window.RS = window.RS || {};
   /* 退出编辑：提交文本、自适应高度、重建遮罩、保持选中可见 */
   function exitEdit(commit) {
     if (!editingId) return;
+    hideSelBar();
     const id = editingId;
     editingId = null;
     const el = RS.getEl(id);
@@ -506,17 +577,21 @@ window.RS = window.RS || {};
     if (span) {
       const wasEditable = span.isContentEditable;
       if (wasEditable) {
-        const newText = (span.textContent || '').replace(/\u00a0/g, ' ').replace(/\n+$/g, '');
+        const newText = (span.innerText || span.textContent || '').replace(/\u00a0/g, ' ').replace(/\n+$/g, '');
         span.contentEditable = 'false';
-        if (newText !== editOriginalText || el.dirty || el.forceVisible) {
+        const rich = cleanRich(span.innerHTML);
+        const fmt = hasFormat(rich);
+        if (newText !== editOriginalText || el.dirty || el.forceVisible || fmt) {
           el.text = newText.trim() ? newText : ' ';
           markDirty(el);
+          if (fmt) el.rich = rich; else delete el.rich;
           const hmm = (span.scrollHeight + 1) / MM2PX;
           el.h = Math.round(Math.max(2, hmm) * 2) / 2;
-          span.innerHTML = RS.render.textToHTML(el.text);
+          span.innerHTML = fmt ? rich : RS.render.textToHTML(el.text);
           if (el.original) RS.render.redrawMasks(RS.getPage(el.page));
         } else {
           span.innerHTML = RS.render.textToHTML(el.text);
+          delete el.rich;
         }
       }
       span.style.display = '';
@@ -526,6 +601,81 @@ window.RS = window.RS || {};
     node.style.height = (el.h * MM2PX) + 'px';
     node.classList.remove('editing');
     if (commit) RS.commit();
+  }
+
+  /* ================= 选区迷你格式条（Word 式） ================= */
+  const selBar = document.getElementById('selBar');
+  let selBarTimer = null;
+
+  function selectionInEditing() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return false;
+    const r = sel.getRangeAt(0);
+    if (r.collapsed) return false;
+    const host = r.commonAncestorContainer.nodeType === 1 ? r.commonAncestorContainer : r.commonAncestorContainer.parentElement;
+    return !!(host && host.closest && host.closest('.el.editing'));
+  }
+  function showSelBar() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) { hideSelBar(); return; }
+    const r = sel.getRangeAt(0);
+    const rect = r.getBoundingClientRect();
+    if (!rect.width && !rect.height) { hideSelBar(); return; }
+    selBar.classList.remove('hidden');
+    const w = selBar.offsetWidth || 230;
+    let left = Math.max(8, Math.min(window.innerWidth - w - 8, rect.left + rect.width / 2 - w / 2));
+    let top = rect.top - selBar.offsetHeight - 8;
+    if (top < 56) top = rect.bottom + 8;
+    selBar.style.left = left + 'px';
+    selBar.style.top = top + 'px';
+  }
+  function hideSelBar() { if (selBar) selBar.classList.add('hidden'); }
+
+  function selCmd(name) {
+    const node = document.querySelector('.el.editing');
+    const span = node && node.querySelector('.t');
+    if (!span) return;
+    const el = node && RS.getEl(node.dataset.id);
+    if (!el) return;
+    span.focus();
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const r = sel.getRangeAt(0);
+    if (!span.contains(r.commonAncestorContainer)) return;
+    try {
+      if (name === 'link') {
+        const url = prompt('输入链接地址：', 'https://');
+        if (!url || !/^https?:\/\//i.test(url.trim())) { RS.ui.toast('请输入以 https:// 开头的完整链接', 'err'); return; }
+        document.execCommand('createLink', false, url.trim());
+      } else if (name === 'sizeUp') {
+        bumpSelRange(r, 1.3333);
+      } else if (name === 'sizeDown') {
+        bumpSelRange(r, -1.3333);
+      } else if (name === 'clear') {
+        document.execCommand('removeFormat');
+        sanitizeInline(span);
+      } else {
+        document.execCommand(name === 'bold' ? 'bold' : name === 'italic' ? 'italic' : 'underline');
+      }
+      sanitizeInline(span);
+      syncEditHeight(node, span, el);
+      throttledMask(RS.getPage(el.page));
+      RS.commit(undefined, true); // 第二参 true = 不重绘，保持编辑态
+    } catch (e) { console.warn('selCmd', e); }
+  }
+
+  function bindSelBar() {
+    if (!selBar) return;
+    selBar.querySelectorAll('button[data-cmd]').forEach(b => {
+      b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+      b.addEventListener('click', () => selCmd(b.dataset.cmd));
+    });
+    document.addEventListener('selectionchange', () => {
+      clearTimeout(selBarTimer);
+      selBarTimer = setTimeout(() => {
+        if (selectionInEditing()) showSelBar(); else hideSelBar();
+      }, 50);
+    });
   }
 
   /* ================= 键盘 ================= */
@@ -573,6 +723,7 @@ window.RS = window.RS || {};
 
   /* ================= 事件绑定 ================= */
   function init() {
+    bindSelBar();
     pagesEl.addEventListener('mousedown', (e) => {
       const handleNode = e.target.closest('.handle');
       const elNode = e.target.closest('.el');

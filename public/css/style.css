@@ -140,7 +140,10 @@ body.hl .el-ghost { outline: 1px dashed rgba(37,99,235,.45); }
   outline-offset: 1px;
   box-shadow: 0 0 0 1px rgba(37,99,235,.18), 0 4px 14px rgba(37,99,235,.14);
 }
-.el.editing { outline: 2px solid var(--primary); outline-offset: 1px; cursor: text; }
+.el.editing {
+  outline: 2px solid var(--primary); outline-offset: 1px; cursor: text;
+  background: rgba(120,170,220,.10); /* 当前行浅蓝高亮（Word 式"当前段落"） */
+}
 .el-text.editing, .el-text.editing .t { user-select: text; -webkit-user-select: text; }
 .el-text.editing { overflow: visible; }
 .el-badge {
@@ -181,6 +184,20 @@ body.hl .el-ghost { outline: 1px dashed rgba(37,99,235,.45); }
 #floatBar select.fb-font { max-width: 122px; }
 #floatBar input.fb-num { width: 46px; background: #1e293b; color: #e2e8f0; border: 0; border-radius: 5px; height: 24px; font-size: 12px; padding: 0 4px; text-align: center; }
 #floatBar input[type="color"] { width: 24px; height: 24px; border: 0; background: none; padding: 0; cursor: pointer; }
+
+/* 编辑中选中文字时浮出的迷你格式条（Word 式） */
+#selBar {
+  position: fixed; z-index: 320; display: flex; align-items: center; gap: 2px;
+  background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 3px 5px;
+  box-shadow: var(--shadow-lg); font-size: 12px; white-space: nowrap;
+  pointer-events: auto;
+}
+#selBar button {
+  background: none; border: 0; color: #e2e8f0; min-width: 26px; height: 25px;
+  border-radius: 5px; font-size: 12.5px; padding: 0 6px; cursor: pointer;
+}
+#selBar button:hover { background: rgba(255,255,255,.16); }
+#selBar .sep { width: 1px; height: 15px; background: rgba(255,255,255,.22); margin: 0 3px; }
 
 /* ============ 右侧面板 ============ */
 #panel {

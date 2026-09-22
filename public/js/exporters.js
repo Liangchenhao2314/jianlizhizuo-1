@@ -31,7 +31,7 @@ window.RS = window.RS || {};
 
     if (el.type === 'text') {
       const span = document.createElement('span');
-      span.innerHTML = RS.render.textToHTML(el.text);
+      span.innerHTML = el.rich || RS.render.textToHTML(el.text); // 导出保留选区局部格式（加粗/字号）
       span.style.fontFamily = RS.render.fontStack(el.fontFamily);
       span.style.fontSize = (el.fontSizePt || 10) + 'pt';
       if (el.bold) span.style.fontWeight = '700';
@@ -187,7 +187,7 @@ window.RS = window.RS || {};
       css.push('color:' + (el.color || '#000'));
       css.push('text-align:' + (el.align || 'left'));
       css.push('line-height:' + (el.lineHeight || 1.25));
-      inner = esc(el.text || '').replace(/\n/g, '<br>');
+      inner = el.rich || (esc(el.text || '').replace(/\n/g, '<br>'));
     } else if (el.type === 'image') {
       inner = '<img src="' + el.src + '" style="width:100%;height:100%;">';
     } else if (el.type === 'divider') {

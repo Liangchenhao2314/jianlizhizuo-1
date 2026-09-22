@@ -84,10 +84,13 @@ window.RS = window.RS || {};
         '在左侧画布点击任意文字 / 图片 / 分割线即可选中并编辑。<br><br>' +
         '技巧：<br>' +
         '· 单击文字 = 光标直接进入，所见即所得<br>' +
+        '· 编辑中选中文字 = 浮出格式条（加粗 / 斜体 / 链接 / 字号± / 清除）<br>' +
         '· 拖动 = 移动位置，8 个手柄 = 缩放<br>' +
         '· 选中后点右上「AI 优化」可智能改写<br>' +
         '· 支持 Ctrl+Z 撤销、Ctrl+D 复制、Delete 删除' +
-        '</div>';
+        '</div>' +
+        globalHTML();
+      bindGlobalPane();
       return;
     }
     const el = els[0];
@@ -157,8 +160,10 @@ window.RS = window.RS || {};
     h += '<button class="btn btn-sm" id="propLock">' + (el.locked ? '解锁' : '锁定') + '</button>';
     h += '</div>';
     h += multi ? '<div class="note" style="margin-top:8px;">已选中 ' + els.length + ' 个元素，修改将同时应用。</div>' : '';
+    h += globalHTML();
     pane.innerHTML = h;
     bindStylePane(els, el);
+    bindGlobalPane();
   }
 
   function bindStylePane(els, el) {
@@ -174,6 +179,7 @@ window.RS = window.RS || {};
       let timer = null;
       txt.addEventListener('input', () => {
         first.text = txt.value;
+        delete first.rich; // 面板文本框是纯文本编辑，清除局部格式
         if (!first.original) { first.original = { x: first.x, y: first.y, w: first.w, h: first.h }; }
         first.dirty = true;
         const n = document.querySelector('.el[data-id="' + first.id + '"] .t');
@@ -251,6 +257,243 @@ window.RS = window.RS || {};
     if (lock) lock.onclick = () => { set({ locked: !first.locked }); renderStylePane(); };
     const repImg = document.getElementById('propReplaceImg');
     if (repImg) repImg.onclick = () => chooseImageFor(first.id);
+  }
+
+  /* ================= 全局排版 / 内容条目 / 版本 / 单页检测（常驻面板） ================= */
+  function globalHTML() {
+    return '' +
+      '<div class="panel-title">正文排版（一键全局）</div>' +
+      '<div class="seg" id="gfontChips">' +
+      '<button data-f="Microsoft YaHei" class="active">黑体</button>' +
+      '<button data-f="SimSun">宋体</button>' +
+      '<button data-f="Noto Sans SC">思源</button>' +
+      '<button data-f="Times New Roman">学术</button>' +
+      '</div>' +
+      '<div class="range-inline" style="margin-top:8px;"><label style="width:40px;flex:0 0 auto;">字号</label>' +
+      '<input type="range" id="gSize" min="70" max="140" step="1" value="100"><output id="gSizeV">100%</output></div>' +
+      '<div class="range-inline"><label style="width:40px;flex:0 0 auto;">行高</label>' +
+      '<input type="range" id="gLine" min="1" max="2.2" step="0.05" value="1.25"><output id="gLineV">1.25</output></div>' +
+      '<div style="display:flex;gap:6px;margin-top:8px;">' +
+      '<button class="btn btn-sm" id="gReset" style="flex:1;">恢复原版参数</button>' +
+      '<button class="btn btn-sm" id="gFit" style="flex:1;">自动压到单页</button>' +
+      '</div>' +
+      '<div class="note" id="gFitInfo" style="margin-top:6px;">单页检测：—</div>' +
+
+      '<div class="panel-title">内容条目</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+      '<button class="btn btn-sm" id="gAddText">+ 文本行</button>' +
+      '<button class="btn btn-sm" id="gAddBullet">+ Bullet</button>' +
+      '<button class="btn btn-sm" id="gDup">复制当前行</button>' +
+      '<button class="btn btn-sm btn-danger" id="gDel">删除当前行</button>' +
+      '</div>' +
+      '<div class="note" id="gRowNote" style="margin-top:6px;">先在画布点击一行文字（出现蓝框）再操作；新行插入在该行下方。</div>' +
+
+      '<div class="panel-title">简历版本（本地保存）</div>' +
+      '<div class="field-row">' +
+      '<div class="field" style="flex:1;"><input type="text" id="gVerName" placeholder="版本名，如：投字节版"></div>' +
+      '<div class="field"><button class="btn btn-sm" id="gVerSave" style="height:31px;">保存</button></div>' +
+      '</div>' +
+      '<ul id="gVerList" style="list-style:none;margin:2px 0 0;padding:0;max-height:132px;overflow:auto;"></ul>';
+  }
+
+  function currentSnapshot() {
+    return {
+      pages: JSON.parse(JSON.stringify(RS.state.pages)),
+      pageW: RS.state.pageW,
+      pageH: RS.state.pageH,
+      projectName: RS.state.projectName,
+      sourceInfo: RS.state.sourceInfo,
+    };
+  }
+
+  function checkFit() {
+    const info = document.getElementById('gFitInfo');
+    if (!info) return;
+    if (!RS.state.pages.length) { info.textContent = '单页检测：导入简历后自动检测'; info.style.color = ''; return; }
+    let worst = 0;
+    for (const p of RS.state.pages) {
+      const limit = (p.h || RS.state.pageH) - 6;
+      for (const e of p.elements) worst = Math.max(worst, e.y + e.h - limit);
+    }
+    if (worst > 0.5) {
+      info.textContent = '⚠ 内容超出页面底部约 ' + worst.toFixed(1) + ' mm，可点「自动压到单页」';
+      info.style.color = 'var(--warn)';
+    } else {
+      info.textContent = '✓ 内容在页面范围内';
+      info.style.color = 'var(--ok)';
+    }
+  }
+
+  function autoFitOnePage() {
+    if (!RS.state.pages.length) { RS.ui.toast('请先导入或新建简历', 'warn'); return; }
+    for (let guard = 0; guard < 40; guard++) {
+      let worst = 0;
+      for (const p of RS.state.pages) {
+        const limit = (p.h || RS.state.pageH) - 6;
+        for (const e of p.elements) worst = Math.max(worst, e.y + e.h - limit);
+      }
+      if (worst <= 0) break;
+      for (const p of RS.state.pages) {
+        for (const e of p.elements) {
+          if (e.type === 'text') e.fontSizePt = Math.max(3, Math.round(e.fontSizePt * 0.96 * 10) / 10);
+          e.y = Math.round(e.y * 0.976 * 2) / 2;
+          e.h = Math.round(e.h * 0.976 * 2) / 2;
+        }
+      }
+    }
+    RS.render.renderAll();
+    RS.commit();
+    checkFit();
+    RS.ui.toast('已自动压缩排版，尽量保持单页（仍可微调）', 'ok');
+  }
+
+  const VER_KEY = 'rs_versions';
+  function loadVersions() {
+    try { return JSON.parse(localStorage.getItem(VER_KEY) || '[]'); } catch (e) { return []; }
+  }
+  function saveVersions(list) {
+    try { localStorage.setItem(VER_KEY, JSON.stringify(list)); } catch (e) {}
+  }
+  function renderVerList() {
+    const ul = document.getElementById('gVerList');
+    if (!ul) return;
+    const list = loadVersions();
+    ul.innerHTML = '';
+    if (!list.length) { ul.innerHTML = '<li style="font-size:11.5px;color:var(--ink-3);">暂无本地版本</li>'; return; }
+    list.forEach((v, i) => {
+      const li = document.createElement('li');
+      li.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 0;border-bottom:1px dashed #eef1f4;';
+      const s = document.createElement('span');
+      s.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      s.textContent = v.name + '（' + (v.time || '') + '）';
+      const b1 = document.createElement('button');
+      b1.textContent = '恢复';
+      b1.title = '恢复到该版本';
+      b1.onclick = () => {
+        confirmModal('恢复到版本「' + v.name + '」？当前内容会被该版本替换。', () => {
+          RS.restoreSnapshot(v.data);
+          RS.ui.toast('已恢复版本：' + v.name, 'ok');
+          renderVerList();
+          checkFit();
+        });
+      };
+      const b2 = document.createElement('button');
+      b2.textContent = '删除';
+      b2.style.color = '#b23b3b';
+      b2.onclick = () => { const l = loadVersions(); l.splice(i, 1); saveVersions(l); renderVerList(); };
+      [b1, b2].forEach(b => { b.style.cssText = 'border:none;background:none;color:#1a5fb4;cursor:pointer;font-size:12px;padding:0 3px;'; });
+      li.appendChild(s); li.appendChild(b1); li.appendChild(b2);
+      ul.appendChild(li);
+    });
+  }
+
+  function bindGlobalPane() {
+    const chips = document.getElementById('gfontChips');
+    if (chips) {
+      const setActive = (f) => { chips.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.f === f)); };
+      chips.addEventListener('click', (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        const f = b.dataset.f;
+        let n = 0;
+        for (const p of RS.state.pages) for (const el of p.elements) if (el.type === 'text') { el.fontFamily = f; n++; }
+        setActive(f);
+        RS.render.renderAll();
+        RS.commit();
+        RS.ui.toast('已切换全文为「' + ({ 'Microsoft YaHei': '黑体', SimSun: '宋体', 'Noto Sans SC': '思源', 'Times New Roman': '学术' }[f] || f) + '」共 ' + n + ' 处（可 Ctrl+Z 撤销）', 'ok');
+      });
+    }
+
+    const gSize = document.getElementById('gSize');
+    const gLine = document.getElementById('gLine');
+    if (gSize) {
+      const gSizeV = document.getElementById('gSizeV');
+      if (!gSize.__orig) {
+        gSize.__orig = {};
+        for (const p of RS.state.pages) for (const e of p.elements) if (e.type === 'text') gSize.__orig[e.id] = e.fontSizePt;
+      }
+      gSize.addEventListener('input', () => {
+        const v = parseFloat(gSize.value) / 100;
+        if (gSizeV) gSizeV.textContent = Math.round(gSize.value) + '%';
+        for (const p of RS.state.pages) for (const e of p.elements) if (e.type === 'text' && gSize.__orig[e.id]) {
+          e.fontSizePt = Math.max(3, Math.min(120, Math.round(gSize.__orig[e.id] * v * 10) / 10));
+        }
+        RS.render.renderAll();
+        RS.commit();
+        checkFit();
+      });
+    }
+    if (gLine) {
+      const gLineV = document.getElementById('gLineV');
+      gLine.addEventListener('input', () => {
+        const v = parseFloat(gLine.value);
+        if (gLineV) gLineV.textContent = v.toFixed(2);
+        for (const p of RS.state.pages) for (const e of p.elements) if (e.type === 'text') e.lineHeight = v;
+        RS.render.renderAll();
+        RS.commit();
+      });
+    }
+    const gReset = document.getElementById('gReset');
+    if (gReset) gReset.onclick = () => {
+      if (gSize) { gSize.value = 100; gSize.dispatchEvent(new Event('input')); }
+      if (gLine) { gLine.value = 1.25; gLine.dispatchEvent(new Event('input')); }
+      RS.ui.toast('已恢复原版字号 / 行高', 'ok');
+    };
+    const gFit = document.getElementById('gFit');
+    if (gFit) gFit.onclick = autoFitOnePage;
+
+    const needSel = () => {
+      if (!RS.state.selected.length) { RS.ui.toast('请先在画布点击一行文字（出现蓝框）', 'warn'); return null; }
+      return RS.getEl(RS.state.selected[0]);
+    };
+    const addRow = (bullet) => {
+      const el = needSel();
+      if (!el) return;
+      const page = RS.getPage(el.page);
+      const rowH = Math.max(3, (el.fontSizePt || 10) * (el.lineHeight || 1.25) * 25.4 / 72);
+      const ne = {
+        type: 'text',
+        text: bullet ? '• 新增 bullet，点击直接修改' : '新增文本行，点击直接修改',
+        x: el.x, y: Math.round((el.y + el.h + 2) * 2) / 2,
+        w: el.w, h: Math.round(rowH * 2) / 2,
+        fontFamily: el.fontFamily || 'Microsoft YaHei',
+        fontSizePt: el.fontSizePt || 10,
+        lineHeight: el.lineHeight || 1.25,
+        align: el.align || 'left',
+        color: el.color || '#000000',
+      };
+      const added = RS.addElement(page.id, ne);
+      RS.setSelected([added.id]);
+      RS.ui.toast('已插入' + (bullet ? ' bullet' : '文本行') + '，可拖动调整位置', 'ok');
+      RS.render.renderAll();
+    };
+    const gAddText = document.getElementById('gAddText');
+    if (gAddText) gAddText.onclick = () => addRow(false);
+    const gAddBullet = document.getElementById('gAddBullet');
+    if (gAddBullet) gAddBullet.onclick = () => addRow(true);
+    const gDup = document.getElementById('gDup');
+    if (gDup) gDup.onclick = () => {
+      if (!RS.state.selected.length) { RS.ui.toast('请先点击一行文字', 'warn'); return; }
+      RS.duplicate(RS.state.selected.slice());
+    };
+    const gDel = document.getElementById('gDel');
+    if (gDel) gDel.onclick = () => {
+      if (!RS.state.selected.length) { RS.ui.toast('请先点击一行文字', 'warn'); return; }
+      RS.removeElements(RS.state.selected.slice());
+    };
+
+    const verSave = document.getElementById('gVerSave');
+    if (verSave) verSave.onclick = () => {
+      const name = (document.getElementById('gVerName').value || '').trim() || ('版本 ' + new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }));
+      const list = loadVersions();
+      list.unshift({ name, time: new Date().toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' }), data: currentSnapshot() });
+      saveVersions(list.slice(0, 12));
+      document.getElementById('gVerName').value = '';
+      renderVerList();
+      RS.ui.toast('已保存版本：' + name, 'ok');
+    };
+    renderVerList();
+    checkFit();
   }
 
   /* ---------- 图片替换 ---------- */
@@ -743,6 +986,7 @@ window.RS = window.RS || {};
             const el = RS.getEl(id);
             if (!el) continue;
             el.text = text;
+            delete el.rich;
             if (!el.original) el.original = { x: el.x, y: el.y, w: el.w, h: el.h };
             el.dirty = true;
             el.aiModified = true;

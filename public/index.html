@@ -128,6 +128,19 @@
 <!-- 跟随选区的快捷工具条 -->
 <div id="floatBar" class="hidden"></div>
 
+<!-- 编辑中选中文字时浮出的迷你格式条（Word 式） -->
+<div id="selBar" class="hidden">
+  <button data-cmd="bold" title="加粗" style="font-weight:700">B</button>
+  <button data-cmd="italic" title="斜体" style="font-style:italic">I</button>
+  <button data-cmd="underline" title="下划线" style="text-decoration:underline">U</button>
+  <span class="sep"></span>
+  <button data-cmd="link" title="插入链接">↗</button>
+  <button data-cmd="sizeDown" title="字号 -0.5pt">A−</button>
+  <button data-cmd="sizeUp" title="字号 +0.5pt">A+</button>
+  <span class="sep"></span>
+  <button data-cmd="clear" title="清除格式">↺</button>
+</div>
+
 <!-- 隐藏输入 -->
 <input type="file" id="fileInput" accept=".pdf,.docx,.doc,.json,.md,.txt" hidden>
 <input type="file" id="imageInput" accept="image/*" hidden>
