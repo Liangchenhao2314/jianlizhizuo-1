@@ -106,7 +106,7 @@ window.RS = window.RS || {};
     const sizeIn = document.createElement('input');
     sizeIn.type = 'number'; sizeIn.className = 'fb-num';
     sizeIn.min = 4; sizeIn.max = 96;
-    sizeIn.value = el.fontSizePt || 10;
+    sizeIn.value = Math.round((el.fontSizePt || 10) * 100) / 100;
     sizeIn.title = '字号（pt）';
     sizeIn.onchange = () => applyStyle({ fontSizePt: Math.max(4, Math.min(96, parseFloat(sizeIn.value) || 10)) });
     floatBar.appendChild(sizeIn);
@@ -230,6 +230,66 @@ window.RS = window.RS || {};
   }
   RS.editorCascade = cascadeVisible;
 
+  /* ================= 行管理：吸附对齐 + 自动避让（一行归一行） ================= */
+  const ROW_GAP = 1.5; // mm，行间最小间距
+
+  // 拖动时把文本行 y 吸附到邻近行的对齐线（同一水平线不打架）
+  function snapToLines(el) {
+    const page = RS.getPage(el.page);
+    if (!page) return;
+    const candidates = page.elements.filter(e => e.type === 'text' && e.id !== el.id && !e.locked);
+    let best = null;
+    for (const c of candidates) {
+      const d = Math.abs(c.y - el.y);
+      if (d < 1.1 && (!best || d < best.d)) best = { y: c.y, d };
+    }
+    if (best) el.y = best.y;
+  }
+
+  // 放下后自动避让：页面文本元素两两重叠时，把下方元素往下推，直到互不重叠
+  function resolveOverlaps(pageId) {
+    const page = RS.getPage(pageId);
+    if (!page) return false;
+    const sorted = page.elements.filter(e => e.type === 'text' && (e.text || '').trim() && !e.locked)
+      .sort((a, b) => a.y - b.y);
+    let changed = false;
+    for (let guard = 0; guard < 50; guard++) {
+      let hit = false;
+      for (let i = 0; i < sorted.length; i++) {
+        const a = sorted[i];
+        for (let j = i + 1; j < sorted.length; j++) {
+          const b = sorted[j];
+          if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) {
+            const newY = a.y + a.h + ROW_GAP;
+            if (b.y < newY) { b.y = Math.round(newY * 2) / 2; changed = true; hit = true; }
+          }
+        }
+      }
+      if (!hit) break;
+      sorted.sort((a, b) => a.y - b.y);
+    }
+    return changed;
+  }
+
+  // 一键整理：页面上文本行按顺序垂直排布，行距统一，绝不重叠
+  function tidyLines() {
+    if (!RS.state.pages.length) { RS.ui.toast('请先导入或新建简历', 'warn'); return; }
+    let moved = 0;
+    for (const p of RS.state.pages) {
+      const els = p.elements.filter(e => e.type === 'text' && !e.locked)
+        .sort((a, b) => (a.y - b.y) || (a.x - b.x));
+      let y = null;
+      for (const e of els) {
+        if (y !== null) { e.y = Math.round(y * 2) / 2; moved++; }
+        y = e.y + e.h + ROW_GAP;
+      }
+    }
+    RS.render.renderAll();
+    RS.commit();
+    RS.ui.toast('已按行整理排版：' + moved + ' 处位置对齐（可 Ctrl+Z 撤销）', 'ok');
+    RS.ui.checkFit && RS.ui.checkFit();
+  }
+
   /* ================= 拖动 ================= */
   function startDrag(e, el) {
     if (e.target.closest('[contenteditable="true"]')) return;
@@ -258,6 +318,7 @@ window.RS = window.RS || {};
         if (!o) continue;
         o.x = Math.round((s.x + dx) * 2) / 2;
         o.y = Math.round((s.y + dy) * 2) / 2;
+        if (o.type === 'text') snapToLines(o); // 拖动中吸附到行对齐线
       }
       const n = pagesEl.querySelector('.el[data-id="' + starts[0].id + '"]');
       if (n) {
@@ -271,9 +332,18 @@ window.RS = window.RS || {};
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       if (moved) {
+        // 放下后：已移动的元素盖白底，并自动避让重叠的相邻行
+        const movedIds = new Set();
         for (const s of starts) {
           const o = RS.getEl(s.id);
-          if (o) { cascadeVisible(RS.getPage(o.page)); RS.render.redrawMasks(RS.getPage(o.page)); }
+          if (o) { cascadeVisible(RS.getPage(o.page)); RS.render.redrawMasks(RS.getPage(o.page)); movedIds.add(o.id); }
+        }
+        for (const s of starts) {
+          const o = RS.getEl(s.id);
+          if (o && o.type === 'text') {
+            const changed = resolveOverlaps(o.page);
+            if (changed) RS.render.redrawMasks(RS.getPage(o.page));
+          }
         }
         RS.commit();
       }
@@ -349,6 +419,7 @@ window.RS = window.RS || {};
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       RS.render.redrawMasks(page);
+      if (el.type === 'text') resolveOverlaps(el.page);
       RS.commit();
     }
     window.addEventListener('mousemove', onMove);
@@ -600,7 +671,16 @@ window.RS = window.RS || {};
     }
     node.style.height = (el.h * MM2PX) + 'px';
     node.classList.remove('editing');
-    if (commit) RS.commit();
+    if (commit) {
+      // 退出编辑：高度变化后自动把下方重叠的行推下去（一行归一行）
+      let changed = false;
+      if (el.type === 'text') changed = resolveOverlaps(el.page);
+      if (changed) {
+        RS.render.renderAll();
+        updateSelectionUI();
+      }
+      RS.commit();
+    }
   }
 
   /* ================= 选区迷你格式条（Word 式） ================= */
@@ -809,5 +889,8 @@ window.RS = window.RS || {};
     enterEdit,
     beginEdit: enterEdit,
     exitEdit,
+    snapToLines,
+    resolveOverlaps,
+    tidyLines,
   };
 })();

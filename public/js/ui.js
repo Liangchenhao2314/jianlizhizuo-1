@@ -25,11 +25,13 @@ window.RS = window.RS || {};
   }
   function showLoading(text) {
     const o = document.getElementById('loadingOverlay');
-    document.getElementById('loadingText').textContent = text || '处理中…';
-    o.classList.remove('hidden');
+    const t = document.getElementById('loadingText');
+    if (t) t.textContent = text || '处理中…';
+    if (o) o.classList.remove('hidden');
   }
   function hideLoading() {
-    document.getElementById('loadingOverlay').classList.add('hidden');
+    const o = document.getElementById('loadingOverlay');
+    if (o) o.classList.add('hidden');
   }
 
   /* ================= 弹窗 ================= */
@@ -108,7 +110,7 @@ window.RS = window.RS || {};
     h += '<div class="panel-title">文字样式</div>';
     h += '<div class="field"><label>字体</label><select id="propFont">' + FONTS.map(f => '<option value="' + f + '"' + (el.fontFamily === f ? ' selected' : '') + '>' + f + '</option>').join('') + '</select></div>';
     h += '<div class="prop-grid">';
-    h += '<div class="field"><label>字号 (pt)</label><input type="number" id="propSize" value="' + (el.fontSizePt || 10) + '" min="4" max="120"></div>';
+    h += '<div class="field"><label>字号 (pt)</label><input type="number" id="propSize" value="' + (Math.round((el.fontSizePt || 10) * 100) / 100) + '" min="4" max="120"></div>';
     h += '<div class="field"><label>行高</label><input type="number" id="propLineH" step="0.05" min="0.8" max="4" value="' + (el.lineHeight || 1.25) + '"></div>';
     h += '<div class="field"><label>字间距 (pt)</label><input type="number" id="propLetter" step="0.1" min="0" max="10" value="' + (el.letterSpacingPt || 0) + '"></div>';
     h += '<div class="field"><label>对齐</label><div class="seg" id="propAlign">' +
@@ -277,6 +279,9 @@ window.RS = window.RS || {};
       '<button class="btn btn-sm" id="gReset" style="flex:1;">恢复原版参数</button>' +
       '<button class="btn btn-sm" id="gFit" style="flex:1;">自动压到单页</button>' +
       '</div>' +
+      '<div style="display:flex;gap:6px;margin-top:6px;">' +
+      '<button class="btn btn-sm" id="gTidy" style="flex:1;">整理行距（一行归一行）</button>' +
+      '</div>' +
       '<div class="note" id="gFitInfo" style="margin-top:6px;">单页检测：—</div>' +
 
       '<div class="panel-title">内容条目</div>' +
@@ -441,6 +446,8 @@ window.RS = window.RS || {};
     };
     const gFit = document.getElementById('gFit');
     if (gFit) gFit.onclick = autoFitOnePage;
+    const gTidy = document.getElementById('gTidy');
+    if (gTidy) gTidy.onclick = () => { if (RS.editor && RS.editor.tidyLines) RS.editor.tidyLines(); else RS.ui.toast('请先导入简历', 'warn'); };
 
     const needSel = () => {
       if (!RS.state.selected.length) { RS.ui.toast('请先在画布点击一行文字（出现蓝框）', 'warn'); return null; }
@@ -466,6 +473,7 @@ window.RS = window.RS || {};
       RS.setSelected([added.id]);
       RS.ui.toast('已插入' + (bullet ? ' bullet' : '文本行') + '，可拖动调整位置', 'ok');
       RS.render.renderAll();
+      if (RS.editor && RS.editor.resolveOverlaps) RS.editor.resolveOverlaps(page.id); // 新行插入后自动避让下方行
     };
     const gAddText = document.getElementById('gAddText');
     if (gAddText) gAddText.onclick = () => addRow(false);

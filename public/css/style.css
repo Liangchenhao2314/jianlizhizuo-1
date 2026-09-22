@@ -136,28 +136,34 @@ body.hl .el-ghost { outline: 1px dashed rgba(37,99,235,.45); }
 .el-html td, .el-html th { border: 1px solid #999; padding: 2px 6px; }
 
 .el.selected {
-  outline: 2px solid var(--primary);
-  outline-offset: 1px;
-  box-shadow: 0 0 0 1px rgba(37,99,235,.18), 0 4px 14px rgba(37,99,235,.14);
+  /* Word 式：只有极淡的行高亮，无粗边框无阴影，避免页面花哨 */
+  background: rgba(59,130,246,.06);
 }
+.el.selected:hover { background: rgba(59,130,246,.10); }
 .el.editing {
-  outline: 2px solid var(--primary); outline-offset: 1px; cursor: text;
-  background: rgba(120,170,220,.10); /* 当前行浅蓝高亮（Word 式"当前段落"） */
+  /* 当前编辑行：与参考文件一致，极淡浅蓝底 + 光标在位 */
+  background: rgba(120,170,220,.10); cursor: text;
 }
 .el-text.editing, .el-text.editing .t { user-select: text; -webkit-user-select: text; }
 .el-text.editing { overflow: visible; }
 .el-badge {
-  position: absolute; top: -25px; right: -1px; background: var(--primary); color: #fff;
-  font-size: 10px; line-height: 1; padding: 4px 7px; border-radius: 5px 5px 0 5px;
-  z-index: 95; pointer-events: none; white-space: nowrap; box-shadow: 0 2px 6px rgba(37,99,235,.35);
+  /* 极简小角标：仅选中非编辑时可见，且鼠标悬停才浮现，不打扰阅读 */
+  position: absolute; top: -22px; right: 0; background: rgba(15,23,42,.82); color: #fff;
+  font-size: 10px; line-height: 1; padding: 3px 7px; border-radius: 5px 5px 0 5px;
+  z-index: 95; pointer-events: none; white-space: nowrap;
+  opacity: 0; transition: opacity .15s;
 }
+.el.selected:hover .el-badge { opacity: 1; }
+.el.editing .el-badge { display: none; }
 .el.locked { cursor: not-allowed; }
 
-/* 选区手柄 */
+/* 选区手柄：小巧圆点，仅悬停/选中时才以低透明度可见 */
 .handle {
-  position: absolute; width: 9px; height: 9px; background: #fff;
-  border: 1.5px solid var(--primary); border-radius: 2px; z-index: 90;
+  position: absolute; width: 6px; height: 6px; background: #fff;
+  border: 1.5px solid #3b82f6; border-radius: 50%; z-index: 90;
+  opacity: .35; transition: opacity .15s;
 }
+.el.selected:hover .handle, .el.selected:hover .handle { opacity: 1; }
 .handle.nw { left: -5px; top: -5px; cursor: nwse-resize; }
 .handle.n  { left: calc(50% - 5px); top: -5px; cursor: ns-resize; }
 .handle.ne { right: -5px; top: -5px; cursor: nesw-resize; }
@@ -167,37 +173,37 @@ body.hl .el-ghost { outline: 1px dashed rgba(37,99,235,.45); }
 .handle.sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
 .handle.w  { left: -5px; top: calc(50% - 5px); cursor: ew-resize; }
 
-/* 跟随选区的快捷工具条 */
+/* 跟随选区的快捷工具条（精致深色小条，参考 Word 浮条） */
 #floatBar {
   position: fixed; z-index: 300; display: flex; align-items: center; gap: 2px;
-  background: #0f172a; color: #e2e8f0; border-radius: 9px; padding: 4px 6px;
-  box-shadow: var(--shadow-lg); font-size: 12px; white-space: nowrap;
+  background: #22262b; color: #e8eaed; border-radius: 8px; padding: 3px 5px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.26); font-size: 12px; white-space: nowrap;
 }
 #floatBar .fb-btn {
-  background: none; border: 0; color: #e2e8f0; min-width: 26px; height: 26px;
-  border-radius: 6px; font-size: 13px; padding: 0 6px;
+  background: none; border: 0; color: #e8eaed; min-width: 23px; height: 23px;
+  border-radius: 5px; font-size: 12.5px; padding: 0 5px; cursor: pointer;
 }
-#floatBar .fb-btn:hover { background: rgba(255,255,255,.14); }
-#floatBar .fb-btn.active { background: var(--primary); color: #fff; }
-#floatBar .fb-sep { width: 1px; height: 16px; background: rgba(255,255,255,.2); margin: 0 3px; }
-#floatBar select.fb-sel { background: #1e293b; color: #e2e8f0; border: 0; border-radius: 5px; height: 24px; font-size: 12px; }
-#floatBar select.fb-font { max-width: 122px; }
-#floatBar input.fb-num { width: 46px; background: #1e293b; color: #e2e8f0; border: 0; border-radius: 5px; height: 24px; font-size: 12px; padding: 0 4px; text-align: center; }
-#floatBar input[type="color"] { width: 24px; height: 24px; border: 0; background: none; padding: 0; cursor: pointer; }
+#floatBar .fb-btn:hover { background: #3a4048; }
+#floatBar .fb-btn.active { background: #3b82f6; color: #fff; }
+#floatBar .fb-sep { width: 1px; height: 14px; background: #4a5158; margin: 0 3px; }
+#floatBar select.fb-sel { background: #2c3138; color: #e8eaed; border: 0; border-radius: 5px; height: 21px; font-size: 11.5px; }
+#floatBar select.fb-font { max-width: 108px; }
+#floatBar input.fb-num { width: 40px; background: #2c3138; color: #e8eaed; border: 0; border-radius: 5px; height: 21px; font-size: 11.5px; padding: 0 4px; text-align: center; }
+#floatBar input[type="color"] { width: 20px; height: 20px; border: 0; background: none; padding: 0; cursor: pointer; }
 
 /* 编辑中选中文字时浮出的迷你格式条（Word 式） */
 #selBar {
   position: fixed; z-index: 320; display: flex; align-items: center; gap: 2px;
-  background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 3px 5px;
-  box-shadow: var(--shadow-lg); font-size: 12px; white-space: nowrap;
+  background: #22262b; color: #e8eaed; border-radius: 8px; padding: 3px 5px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.26); font-size: 12px; white-space: nowrap;
   pointer-events: auto;
 }
 #selBar button {
-  background: none; border: 0; color: #e2e8f0; min-width: 26px; height: 25px;
-  border-radius: 5px; font-size: 12.5px; padding: 0 6px; cursor: pointer;
+  background: none; border: 0; color: #e8eaed; min-width: 23px; height: 23px;
+  border-radius: 5px; font-size: 12.5px; padding: 0 5px; cursor: pointer;
 }
-#selBar button:hover { background: rgba(255,255,255,.16); }
-#selBar .sep { width: 1px; height: 15px; background: rgba(255,255,255,.22); margin: 0 3px; }
+#selBar button:hover { background: #3a4048; }
+#selBar .sep { width: 1px; height: 14px; background: #4a5158; margin: 0 3px; }
 
 /* ============ 右侧面板 ============ */
 #panel {
@@ -215,7 +221,7 @@ body.hl .el-ghost { outline: 1px dashed rgba(37,99,235,.45); }
 .tab-pane { padding: 14px; display: none; }
 .tab-pane.active { display: block; }
 
-.panel-title { font-size: 12px; color: var(--ink-3); font-weight: 600; margin: 14px 0 8px; letter-spacing: .5px; }
+.panel-title { font-size: 12px; color: #3c4a58; font-weight: 700; margin: 14px 0 8px; padding-bottom: 5px; border-bottom: 1px solid #eceff3; letter-spacing: .6px; }
 .panel-title:first-child { margin-top: 0; }
 .field { margin-bottom: 10px; }
 .field label { display: block; font-size: 12px; color: var(--ink-2); margin-bottom: 4px; }
