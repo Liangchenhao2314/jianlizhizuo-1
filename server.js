@@ -130,11 +130,54 @@ app.post('/api/convert', upload.single('file'), async (req, res) => {
 
 /* ---------------- /api/ai ---------------- */
 const PROVIDERS = {
+  zhipu: { label: '智谱GLM', base: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash', envKey: 'ZHIPU_API_KEY', envModel: 'ZHIPU_MODEL' },
+  siliconflow: { label: '硅基流动', base: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-7B-Instruct', envKey: 'SILICONFLOW_API_KEY', envModel: 'SILICONFLOW_MODEL' },
   doubao: { label: '豆包(火山方舟)', base: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-1-5-pro-32k-250115', envKey: 'DOUBAO_API_KEY', envModel: 'DOUBAO_MODEL' },
   deepseek: { label: 'DeepSeek', base: 'https://api.deepseek.com', model: 'deepseek-chat', envKey: 'DEEPSEEK_API_KEY', envModel: 'DEEPSEEK_MODEL' },
   qwen: { label: '千问(通义)', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus', envKey: 'QWEN_API_KEY', envModel: 'QWEN_MODEL' },
   openai: { label: 'OpenAI 兼容', base: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1', model: process.env.OPENAI_MODEL || 'gpt-4o-mini', envKey: 'OPENAI_API_KEY', envModel: 'OPENAI_MODEL' },
 };
+
+/* 免费模型（如 GLM-4-Flash、硅基流动部分模型）可能不支持 response_format=json_object，
+   失败时降级重试，去掉 JSON 约束仍能拿到结构化内容（由前端 extractJSON 兜底解析） */
+async function callProvider(p, key, modelName, messages, opts) {
+  const build = (jsonMode) => {
+    const body = {
+      model: modelName,
+      messages,
+      temperature: typeof opts.temperature === 'number' ? opts.temperature : 0.4,
+      max_tokens: Math.min(opts.maxTokens || 4096, 8192),
+      stream: false,
+    };
+    if (jsonMode) body.response_format = { type: 'json_object' };
+    return body;
+  };
+  const doFetch = async (jsonMode) => {
+    const resp = await fetch(p.base.replace(/\/+$/, '') + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
+      body: JSON.stringify(build(jsonMode)),
+      signal: AbortSignal.timeout(180000),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      const msg = (data && (data.error && (data.error.message || data.error.code))) || `HTTP ${resp.status}`;
+      throw new Error(String(msg).slice(0, 500), resp.status);
+    }
+    const content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (typeof content !== 'string') throw new Error('AI 返回内容异常');
+    return { content, model: data.model, usage: data.usage };
+  };
+  try {
+    return await doFetch(opts.jsonMode);
+  } catch (e) {
+    const msg = String(e.message || e);
+    if (opts.jsonMode && /response_format|json_object|json mode|不支持.*json|does not support/i.test(msg)) {
+      return await doFetch(false);
+    }
+    throw e;
+  }
+}
 
 app.post('/api/ai', async (req, res) => {
   try {
@@ -152,31 +195,11 @@ app.post('/api/ai', async (req, res) => {
     const modelName = (model && String(model).trim()) || p.model || process.env[p.envModel] || '';
     if (!modelName) return res.status(400).json({ error: '缺少模型名称' });
 
-    const body = {
-      model: modelName,
-      messages,
-      temperature: typeof temperature === 'number' ? temperature : 0.4,
-      max_tokens: Math.min(maxTokens || 4096, 8192),
-      stream: false,
-    };
-    if (jsonMode) body.response_format = { type: 'json_object' };
-
-    const resp = await fetch(p.base.replace(/\/+$/, '') + '/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(180000),
-    });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      const msg = (data && (data.error && (data.error.message || data.error.code))) || `HTTP ${resp.status}`;
-      return res.status(resp.status).json({ error: String(msg).slice(0, 500) });
-    }
-    const content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-    if (typeof content !== 'string') return res.status(502).json({ error: 'AI 返回内容异常' });
-    return res.json({ content, model: data.model, usage: data.usage });
+    const result = await callProvider(p, key, modelName, messages, { jsonMode, maxTokens, temperature });
+    return res.json(result);
   } catch (e) {
-    return res.status(500).json({ error: 'AI 请求失败：' + (e.message || e) });
+    const code = typeof e.code === 'number' ? e.code : 500;
+    return res.status(code).json({ error: 'AI 请求失败：' + (e.message || e) });
   }
 });
 

@@ -48,14 +48,30 @@ node server.js
 
 无任何构建步骤；前端为原生 JS，三方库已本地化（pdf.js / html2canvas / jszip / docx-preview / marked），离线可用。
 
-## 🤖 AI 接入配置
+## 🤖 AI 接入配置（含免费方案）
 
-两种方式，任选其一：
+**完全免费（无需充值）：**
+- **智谱 GLM**：在 [open.bigmodel.cn](https://open.bigmodel.cn) 注册 → 控制台创建 API Key，模型选 `glm-4-flash`（官方免费模型，不限量）。设置页选「智谱 GLM（免费）」即可。
+- **硅基流动**：在 [api.siliconflow.cn](https://api.siliconflow.cn) 注册 → 创建 API Key，模型 `Qwen/Qwen2.5-7B-Instruct`（免费模型限速但永久免费）。
+
+**有免费额度的付费服务商：**
+- **豆包（火山方舟）**：新用户注册送免费试用 tokens；控制台创建推理接入点后填 Key。
+- **DeepSeek**：API 新用户常有活动赠送额度（网页版聊天免费，但不能当 API 用）。
+- **千问（通义）**：DashScope 新用户送免费 token 额度，`qwen-turbo` 更便宜。
+
+**两种接入方式，任选其一：**
 
 1. **浏览器直连（访客填 Key）**：网页右侧「设置」→ 选择服务商 → 填 API Key。Key 仅存本机浏览器。
 2. **服务端代理（访客免填 Key）**：复制 `.env.example` 为 `.env`，填入对应服务商 Key：
 
 ```env
+# 免费：智谱 GLM
+ZHIPU_API_KEY=你的智谱Key
+ZHIPU_MODEL=glm-4-flash
+# 免费：硅基流动
+SILICONFLOW_API_KEY=你的硅基流动Key
+SILICONFLOW_MODEL=Qwen/Qwen2.5-7B-Instruct
+# 有免费额度
 DOUBAO_API_KEY=你的火山方舟Key
 DEEPSEEK_API_KEY=你的DeepSeekKey
 QWEN_API_KEY=你的通义Key
@@ -64,7 +80,7 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini
 ```
 
-然后网页「设置」里勾选「服务端代理模式」。站点访客无需任何配置即可使用 AI 优化。
+然后网页「设置」里勾选「服务端代理模式」。站点访客无需任何配置即可使用 AI 优化。若模型不支持 JSON 模式，系统会自动降级重试（无需手动改）。
 
 > 预设模型：豆包 `doubao-1-5-pro-32k-250115`、DeepSeek `deepseek-chat`、千问 `qwen-plus`、OpenAI `gpt-4o-mini`（均可改）。
 

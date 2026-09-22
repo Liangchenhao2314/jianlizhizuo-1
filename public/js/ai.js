@@ -12,10 +12,12 @@ window.RS = window.RS || {};
   const RS = window.RS;
 
   const PROVIDERS = {
-    doubao: { label: '豆包（火山方舟）', base: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-1-5-pro-32k-250115', tip: '火山方舟控制台创建推理接入点后，模型填接入点 ID 或模型名；有免费额度' },
-    deepseek: { label: 'DeepSeek', base: 'https://api.deepseek.com', model: 'deepseek-chat', tip: 'deepseek-chat 性价比极高，新用户常有免费额度' },
-    qwen: { label: '千问（通义）', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus', tip: 'DashScope 兼容模式；qwen-turbo 更便宜，有免费额度' },
-    openai: { label: 'OpenAI 兼容', base: 'https://api.openai.com/v1', model: 'gpt-4o-mini', tip: '任何 OpenAI 兼容接口：自定义 baseUrl + 模型 + Key' },
+    zhipu: { label: '智谱 GLM（免费）', base: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash', tip: '完全免费：open.bigmodel.cn 注册即可用 GLM-4-Flash 免费模型，无需充值' },
+    siliconflow: { label: '硅基流动（免费）', base: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-7B-Instruct', tip: '免费模型限速但永久免费；注册送体验额度，可换更强模型' },
+    doubao: { label: '豆包（火山方舟）', base: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-1-5-pro-32k-250115', tip: '火山方舟控制台创建推理接入点后，模型填接入点 ID 或模型名；新用户有免费试用额度' },
+    deepseek: { label: 'DeepSeek', base: 'https://api.deepseek.com', model: 'deepseek-chat', tip: 'API 新用户常有活动赠送额度；网页版聊天免费但不能当 API 用' },
+    qwen: { label: '千问（通义）', base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus', tip: 'DashScope 兼容模式；新用户送免费 token 额度，qwen-turbo 更便宜' },
+    openai: { label: 'OpenAI 兼容', base: 'https://api.openai.com/v1', model: 'gpt-4o-mini', tip: '任何 OpenAI 兼容接口：自定义 baseUrl + 模型 + Key（如硅基流动、智谱、本地 Ollama）' },
   };
 
   /* ---------- 核心调用 ---------- */
@@ -32,13 +34,7 @@ window.RS = window.RS || {};
       temperature: typeof opts.temperature === 'number' ? opts.temperature : (s.temperature || 0.4),
     };
     let resp;
-    if (s.useServerProxy) {
-      resp = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({}, body, { apiKey: s.apiKey || undefined })),
-      });
-    } else {
+    const directFetch = async (json) => {
       if (!s.apiKey) throw new Error('未配置 API Key：请在「设置」填写密钥，或开启服务端代理模式');
       const base = (s.baseUrl && s.baseUrl.trim()) || preset.base;
       const payload = {
@@ -48,17 +44,33 @@ window.RS = window.RS || {};
         max_tokens: body.maxTokens,
         stream: false,
       };
-      if (opts.json) payload.response_format = { type: 'json_object' };
-      resp = await fetch(base.replace(/\/+$/, '') + '/chat/completions', {
+      if (json) payload.response_format = { type: 'json_object' };
+      return fetch(base.replace(/\/+$/, '') + '/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + s.apiKey },
         body: JSON.stringify(payload),
       });
+    };
+    if (s.useServerProxy) {
+      resp = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({}, body, { apiKey: s.apiKey || undefined })),
+      });
+    } else {
+      resp = await directFetch(!!opts.json);
     }
-    const data = await resp.json().catch(() => ({}));
+    let data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
       const msg = data.error || ('HTTP ' + resp.status);
-      throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      // 免费模型可能不支持 JSON 模式 → 去掉 response_format 重试一次
+      if (opts.json && !s.useServerProxy && /response_format|json_object|json mode|does not support/i.test(String(typeof msg === 'string' ? msg : JSON.stringify(msg)))) {
+        resp = await directFetch(false);
+        data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(typeof msg === 'string' ? data.error || ('HTTP ' + resp.status) : JSON.stringify(data.error || ''));
+      } else {
+        throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      }
     }
     const content = data.content;
     if (typeof content !== 'string') throw new Error('AI 返回内容异常');
