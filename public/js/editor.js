@@ -17,6 +17,15 @@ window.RS = window.RS || {};
   const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
   const FONTS = ['SimSun', 'SimHei', 'Microsoft YaHei', 'KaiTi', 'FangSong', 'Arial', 'Helvetica', 'Times New Roman', 'Calibri', 'Georgia', 'Courier New'];
 
+  /* #000 → #000000（input[type=color] 需要 6 位十六进制） */
+  function normalizeHex(c) {
+    if (!c) return '#000000';
+    const s = String(c).trim();
+    if (/^#[0-9a-fA-F]{3}$/.test(s)) return '#' + s.slice(1).split('').map(ch => ch + ch).join('');
+    if (/^#[0-9a-fA-F]{6}$/.test(s)) return s.toLowerCase();
+    return '#000000';
+  }
+
   let dragging = null;
   let resizing = null;
   let editingId = null;        // 正在编辑的元素 id
@@ -128,7 +137,7 @@ window.RS = window.RS || {};
 
     const color = document.createElement('input');
     color.type = 'color';
-    color.value = el.color || '#000000';
+    color.value = normalizeHex(el.color) || '#000000';
     color.title = '文字颜色';
     color.oninput = () => applyStyle({ color: color.value });
     floatBar.appendChild(color);
