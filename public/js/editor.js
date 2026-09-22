@@ -209,7 +209,17 @@ window.RS = window.RS || {};
   }
   function cascadeVisible(page) {
     const rects = [];
-    for (const el of page.elements) if (el.original) rects.push(el.original);
+    for (const el of page.elements) {
+      if (el.original) {
+        // 与遮罩一致：原始位置与当前位置的并集
+        rects.push({
+          x: Math.min(el.original.x, el.x),
+          y: Math.min(el.original.y, el.y),
+          w: Math.max(el.original.x + el.original.w, el.x + el.w) - Math.min(el.original.x, el.x),
+          h: Math.max(el.original.y + el.original.h, el.y + el.h) - Math.min(el.original.y, el.y),
+        });
+      }
+    }
     for (const g of page.ghosts || []) rects.push(g);
     for (const r of rects) {
       for (const el of page.elements) {

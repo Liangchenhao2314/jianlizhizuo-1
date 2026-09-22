@@ -153,7 +153,15 @@ window.RS = window.RS || {};
   function whiteoutRects(page) {
     const rects = [];
     for (const el of page.elements) {
-      if (el.original) rects.push(el.original);
+      if (el.original) {
+        // 修改后元素位置/尺寸可能变化（文字变长/变高/被拖动），
+        // 遮罩要覆盖"原始位置"与"当前位置"的并集，否则新文字叠在原版文字上成双影
+        const x0 = Math.min(el.original.x, el.x);
+        const y0 = Math.min(el.original.y, el.y);
+        const x1 = Math.max(el.original.x + el.original.w, el.x + el.w);
+        const y1 = Math.max(el.original.y + el.original.h, el.y + el.h);
+        rects.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+      }
     }
     for (const g of page.ghosts || []) rects.push(g);
     return rects;

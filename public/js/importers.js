@@ -44,9 +44,51 @@ window.RS = window.RS || {};
     [/Frutiger/i, 'Frutiger'],
   ];
 
+  // 文档字体表：WPS/Office 导出的 PDF 中 pdf.js 给文本的字体名是
+  // "g_dX_fY" 子集别名（拿不到真实字体名），只能从 PDF 字节扫描 /BaseFont 还原。
+  let docFonts = [];
+
+  function stripSubset(name) {
+    return String(name || '').replace(/^[A-Za-z0-9]{6}\+/, '');
+  }
+  function isSymbolFont(name) {
+    return /Wingdings|ZapfDingbats|Dingbats|Symbol|MTExtra|Monotype|Marlett|Webdings/i.test(name);
+  }
+  function scanDocFonts(buffer) {
+    docFonts = [];
+    try {
+      const bytes = new Uint8Array(buffer);
+      let s = '';
+      for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+      const re = /\/BaseFont\s*\/([^\s/>]+)/g;
+      let m;
+      const seen = {};
+      while ((m = re.exec(s))) {
+        const name = stripSubset(m[1]);
+        if (!name || isSymbolFont(name)) continue;
+        if (!seen[name]) { seen[name] = true; docFonts.push(name); }
+      }
+    } catch (e) { docFonts = []; }
+  }
+
   function mapFont(fontName) {
     const out = { family: 'Microsoft YaHei', bold: false, italic: false };
     const n = String(fontName || '');
+    // WPS 子集字体别名（g_dX_fY）：按编号取文档字体表里的真实字体
+    const alias = n.match(/^g_\w+_f(\d+)$/i);
+    if (alias) {
+      const real = docFonts[parseInt(alias[1], 10) - 1];
+      if (real) {
+        const hit = FONT_MAP.find(([re]) => re.test(real));
+        out.family = hit ? hit[1] : real;
+        if (/Bold|Heavy|Black|BoldItalic/i.test(real)) out.bold = true;
+        if (/Italic|Oblique/i.test(real)) out.italic = true;
+        return out;
+      }
+      // 扫描失败时的兜底：WPS 简历默认更接近雅黑，而不是宋体
+      out.family = docFonts.length ? 'Microsoft YaHei' : 'SimSun';
+      return out;
+    }
     for (const [re, fam] of FONT_MAP) {
       if (re.test(n)) { out.family = fam; break; }
     }
@@ -63,6 +105,7 @@ window.RS = window.RS || {};
     try {
       RS.historyReset();
       const data = await file.arrayBuffer();
+      scanDocFonts(data); // 还原 WPS 子集字体名（g_dX_fY → 真实字体）
       const pdf = await pdfjsLib.getDocument({ data }).promise;
       const pages = [];
       RS.render.clearCanvases();
@@ -120,8 +163,11 @@ window.RS = window.RS || {};
     const pageH_pt = viewport.height;
     const recs = [];
     for (const it of items || []) {
-      const str = it.str || '';
+      let str = it.str || '';
       if (!str.trim()) continue;
+      // WPS/Office 导出的 PDF 常把列表符号放在私有区（Wingdings 等符号字体），
+      // 浏览器没有这些字体，直接显示会成乱码方块 → 统一转成正常圆点
+      str = str.replace(/[\ue000-\uf8ff]/g, '•');
       const t = it.transform || [1, 0, 0, 1, 0, 0];
       const x0 = t[4];
       const baselineTop_pt = pageH_pt - t[5]; // 基线到页面顶部的距离
