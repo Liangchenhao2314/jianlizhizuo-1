@@ -4,3 +4,7 @@ uploads/
 *.log
 .DS_Store
 Thumbs.db
+
+# 本地测试简历（勿提交公网）
+梁臣豪简历-秋招.docx
+梁臣豪简历-秋招.pdf
