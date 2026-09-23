@@ -136,13 +136,15 @@ body.hl .el-ghost { outline: 1px dashed rgba(37,99,235,.45); }
 .el-html td, .el-html th { border: 1px solid #999; padding: 2px 6px; }
 
 .el.selected {
-  /* Word 式：只有极淡的行高亮，无粗边框无阴影，避免页面花哨 */
-  background: rgba(59,130,246,.06);
+  /* Word 式：极淡的行高亮 + 左侧指示条，无粗边框无阴影，避免页面花哨 */
+  background: rgba(59,130,246,.07);
+  box-shadow: inset 2px 0 0 rgba(59,130,246,.55);
 }
-.el.selected:hover { background: rgba(59,130,246,.10); }
+.el.selected:hover { background: rgba(59,130,246,.11); }
 .el.editing {
-  /* 当前编辑行：与参考文件一致，极淡浅蓝底 + 光标在位 */
-  background: rgba(120,170,220,.10); cursor: text;
+  /* 当前编辑行：与参考文件一致，极淡浅蓝底 + 左侧指示条 + 光标在位 */
+  background: rgba(120,170,220,.13); cursor: text;
+  box-shadow: inset 2px 0 0 rgba(59,130,246,.7);
 }
 .el-text.editing, .el-text.editing .t { user-select: text; -webkit-user-select: text; }
 .el-text.editing { overflow: visible; }

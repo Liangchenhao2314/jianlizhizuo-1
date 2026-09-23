@@ -76,6 +76,8 @@ window.RS = window.RS || {};
       last.appendChild(b);
     }
     for (const h of HANDLES) {
+      // 编辑中不渲染手柄（Word 式纯文字编辑观感，避免 8 个白点干扰）
+      if (editingId) break;
       const d = document.createElement('div');
       d.className = 'handle ' + h;
       d.dataset.handle = h;
@@ -115,7 +117,7 @@ window.RS = window.RS || {};
     const sizeIn = document.createElement('input');
     sizeIn.type = 'number'; sizeIn.className = 'fb-num';
     sizeIn.min = 4; sizeIn.max = 96;
-    sizeIn.value = Math.round((el.fontSizePt || 10) * 100) / 100;
+    sizeIn.value = String(Math.round((el.fontSizePt || 10) * 100) / 100);
     sizeIn.title = '字号（pt）';
     sizeIn.onchange = () => applyStyle({ fontSizePt: Math.max(4, Math.min(96, parseFloat(sizeIn.value) || 10)) });
     floatBar.appendChild(sizeIn);
@@ -190,13 +192,41 @@ window.RS = window.RS || {};
       const node = pagesEl.querySelector('.el[data-id="' + editingEl.id + '"]');
       const span = node && node.querySelector('.t');
       if (span) {
-        if (patch.fontFamily) span.style.fontFamily = RS.render.fontStack(patch.fontFamily);
-        if (patch.fontSizePt) span.style.fontSize = RS.render.pt2px(patch.fontSizePt) + 'px';
+        const sel = window.getSelection();
+        const hasSel = sel && sel.rangeCount && !sel.getRangeAt(0).collapsed;
+        // 字号：有选区 → 只改选中文字（Word 语义）；无选区 → 整块等比缩放（锁定块同步，字体/加粗不变）
+        if (patch.fontSizePt) {
+          const targetPt = Math.max(4, Math.min(96, patch.fontSizePt));
+          if (hasSel && span.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+            try { setSelSize(sel.getRangeAt(0), RS.render.pt2px(targetPt)); } catch (e) { span.style.fontSize = RS.render.pt2px(targetPt) + 'px'; }
+          } else {
+            const oldPt = editingEl.fontSizePt || 10;
+            const ratio = oldPt > 0 ? targetPt / oldPt : 1;
+            span.querySelectorAll('span[data-r]').forEach(s => {
+              const cur = parseFloat(s.style.fontSize) || RS.render.pt2px(oldPt);
+              s.style.fontSize = Math.max(4, Math.round(cur * ratio * 100) / 100) + 'px';
+            });
+            span.style.fontSize = RS.render.pt2px(targetPt) + 'px';
+          }
+        }
+        // 字体：编辑中仅作用于光标/选区处的文字（Word 语义）；execCommand 失败则整块替换（含锁定块，用户主动换字体应生效）
+        if (patch.fontFamily) {
+          const fam = RS.render.fontStack(patch.fontFamily);
+          if (hasSel && span.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+            let ok = false;
+            try { ok = document.execCommand('fontName', false, patch.fontFamily); } catch (e) {}
+            if (!ok) span.style.fontFamily = fam;
+          } else {
+            span.style.fontFamily = fam;
+            span.querySelectorAll('span[data-r]').forEach(s => { s.style.fontFamily = fam; });
+          }
+        }
         if (patch.color) span.style.color = patch.color;
         if (patch.align) span.style.textAlign = patch.align;
         if ('bold' in patch) span.style.fontWeight = patch.bold ? '700' : 'normal';
         if ('italic' in patch) span.style.fontStyle = patch.italic ? 'italic' : 'normal';
         if ('underline' in patch) span.style.textDecoration = patch.underline ? 'underline' : 'none';
+        sanitizeInline(span);
         syncEditHeight(node, span, editingEl);
         if (editingEl.original) RS.render.redrawMasks(RS.getPage(editingEl.page));
       }
@@ -436,9 +466,10 @@ window.RS = window.RS || {};
   }
 
   /* ================= 所见即所得行内编辑 ================= */
+  /* 输入过程净化：FONT 解包；data-r 锁定样式永不动；只清理明显的粘贴垃圾
+     （background/letter-spacing/line-height），保留 font-* 与 color——
+     这些可能是用户主动设置的（浮条换字体/颜色），剥掉会造成"改了没反应"。 */
   function sanitizeInline(root) {
-    // 输入法/浏览器可能插入 font 或带 font-family 的 span，导致"字体走样"：
-    // 剥离会破坏字体/颜色锁定的内联样式；保留 b/i/u/a 与纯 font-size（选区字号 A±）
     const walk = (n) => {
       const kids = Array.prototype.slice.call(n.childNodes || []);
       for (const c of kids) {
@@ -452,11 +483,14 @@ window.RS = window.RS || {};
             continue;
           }
           if (c.tagName === 'SPAN') {
-            const st = (c.getAttribute && (c.getAttribute('style') || '') || '').toLowerCase();
-            if (/font-family|color|background|letter-spacing|line-height|font-weight|font-style/i.test(st)) {
-              const fs = /font-size\s*:\s*([\d.]+)(?:px|pt)/i.exec(st);
-              if (fs) c.setAttribute('style', 'font-size:' + fs[1] + 'px');
-              else c.removeAttribute('style');
+            // 解析型锁定样式（data-r="1"，来自 PDF/Word 原版的字体与加粗）：
+            // 原样保留，任何输入/粘贴/编辑都不得剥离，保证"改文字字体永不变"
+            if (c.getAttribute && c.getAttribute('data-r')) { walk(c); continue; }
+            const st = (c.getAttribute && (c.getAttribute('style') || '') || '');
+            if (/background|letter-spacing|line-height/i.test(st)) {
+              const keep = st.split(';').filter(p => !/background|letter-spacing|line-height/i.test(p));
+              const nst = keep.join(';').trim();
+              if (nst) c.setAttribute('style', nst); else c.removeAttribute('style');
             }
           }
           walk(c);
@@ -479,10 +513,11 @@ window.RS = window.RS || {};
           continue;
         }
         if (c.tagName === 'SPAN') {
-          const st = (c.getAttribute('style') || '').toLowerCase();
-          const fs = /font-size\s*:\s*([\d.]+)(?:px|pt)/i.exec(st);
-          if (fs) c.setAttribute('style', 'font-size:' + fs[1] + 'px');
-          else c.removeAttribute('style');
+          // data-r 锁定样式（原版字体/加粗）：原样持久化，编辑永不剥离
+          if (c.getAttribute && c.getAttribute('data-r')) { walk(c); continue; }
+          const keep = (c.getAttribute('style') || '').split(';').filter(p => !/background|letter-spacing|line-height/i.test(p));
+          const nst = keep.join(';').trim();
+          if (nst) c.setAttribute('style', nst); else c.removeAttribute('style');
         } else if (c.tagName === 'A') {
           const href = c.getAttribute('href');
           if (!href || !/^https?:\/\//i.test(href)) {
@@ -506,13 +541,10 @@ window.RS = window.RS || {};
     return /<(?:b|i|u|a)\b/i.test(html) || /<span[^>]*style=/i.test(html);
   }
 
-  /* 选区字号 ±0.5pt（Word 式局部字号） */
-  function bumpSelRange(r, delta) {
-    const host = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
-    const base = parseFloat(getComputedStyle(host).fontSize) || 13;
-    const size = Math.max(6, Math.min(48, base + delta));
+  /* 选区字号设为指定值（Word 式局部字号） */
+  function setSelSize(r, px) {
     const span = document.createElement('span');
-    span.style.fontSize = size + 'px';
+    span.style.fontSize = px + 'px';
     try {
       r.surroundContents(span);
     } catch (e) {
@@ -525,6 +557,42 @@ window.RS = window.RS || {};
     const nr = document.createRange();
     nr.selectNodeContents(span);
     sel.addRange(nr);
+    return span;
+  }
+
+  /* 选区字号 ±0.5pt（Word 式局部字号） */
+  function bumpSelRange(r, delta) {
+    const host = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+    const base = parseFloat(getComputedStyle(host).fontSize) || 13;
+    const size = Math.max(6, Math.min(48, base + delta));
+    setSelSize(r, size);
+  }
+
+  /* 清除格式（选区）：只清用户格式，data-r 锁定样式原样保留 */
+  function clearSelFormat() {
+    const node = document.querySelector('.el.editing');
+    const span = node && node.querySelector('.t');
+    if (!span) return;
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const r = sel.getRangeAt(0);
+    if (!span.contains(r.commonAncestorContainer)) return;
+    const walker = document.createTreeWalker(span, NodeFilter.SHOW_ELEMENT);
+    const targets = [];
+    while (walker.nextNode()) {
+      const n = walker.currentNode;
+      try { if (!r.intersectsNode(n)) continue; } catch (e) { continue; }
+      const tag = n.nodeName;
+      if (tag === 'SPAN' && !n.getAttribute('data-r')) { n.removeAttribute('style'); targets.push(n); }
+      else if (tag === 'B' || tag === 'I' || tag === 'U') { targets.push(n); }
+    }
+    for (const t of targets) {
+      if (t.nodeName === 'B' || t.nodeName === 'I' || t.nodeName === 'U') {
+        while (t.firstChild) t.parentNode.insertBefore(t.firstChild, t);
+        t.parentNode.removeChild(t);
+      }
+    }
+    sanitizeInline(span);
   }
 
   function syncEditHeight(node, span, el) {
@@ -592,6 +660,8 @@ window.RS = window.RS || {};
     const span = node.querySelector('.t') || node;
     if (!span) return;
     editingId = id;
+    // 进入编辑后重建选区 UI：编辑中不显示缩放手柄（Word 式纯文字观感）
+    updateSelectionUI();
     // 有富文本（局部格式）时先渲染，再进入编辑，保证既有格式可见可继续编辑
     span.innerHTML = el.rich || RS.render.textToHTML(el.text);
     editOriginalText = span.innerText || span.textContent || '';
@@ -684,10 +754,8 @@ window.RS = window.RS || {};
       // 退出编辑：高度变化后自动把下方重叠的行推下去（一行归一行）
       let changed = false;
       if (el.type === 'text') changed = resolveOverlaps(el.page);
-      if (changed) {
-        RS.render.renderAll();
-        updateSelectionUI();
-      }
+      if (changed) RS.render.renderAll();
+      updateSelectionUI(); // 重建选区 UI：编辑态已结束，恢复缩放手柄
       RS.commit();
     }
   }
@@ -741,8 +809,7 @@ window.RS = window.RS || {};
       } else if (name === 'sizeDown') {
         bumpSelRange(r, -1.3333);
       } else if (name === 'clear') {
-        document.execCommand('removeFormat');
-        sanitizeInline(span);
+        clearSelFormat(); // 保护 data-r 锁定样式，只清用户格式
       } else {
         document.execCommand(name === 'bold' ? 'bold' : name === 'italic' ? 'italic' : 'underline');
       }

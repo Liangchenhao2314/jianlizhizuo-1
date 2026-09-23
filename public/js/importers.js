@@ -171,7 +171,10 @@ window.RS = window.RS || {};
     }
   }
 
-  /* ---- 文本 → 行元素 ---- */
+  /* ---- 文本 → 行元素（高保真：大间隙拆段 + 行内混合样式富文本 + 按需补空格） ---- */
+  function escHtml(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
   function textToElements(items, viewport, pageW_mm, pageH_mm) {
     const pageH_pt = viewport.height;
     const recs = [];
@@ -211,31 +214,64 @@ window.RS = window.RS || {};
     const els = [];
     for (const line of lines) {
       line.items.sort((a, b) => a.x0 - b.x0);
-      let text = '';
-      let prevX1 = null;
+      // 按大间隙切段：间隙 > 0.8 字号视为独立文本块（如"电话 xxx 邮箱 xxx"），
+      // 各自保留真实 x 定位，编辑/移动互不干扰，也避免合并成假空格
+      const segs = [];
+      let seg = null;
       for (const r of line.items) {
-        if (prevX1 !== null) {
-          const gap = r.x0 - prevX1;
-          if (gap > r.size * 0.22) text += ' '; // 拉丁字符间距
+        if (!seg || r.x0 - seg.lastX1 > Math.max(r.size, seg.size) * 0.8) {
+          if (seg) segs.push(seg);
+          seg = { items: [r], lastX1: r.x1, baseline: r.baseline, size: r.size };
+        } else {
+          seg.items.push(r);
+          seg.lastX1 = Math.max(seg.lastX1, r.x1);
+          seg.size = Math.max(seg.size, r.size);
         }
-        text += r.str;
-        prevX1 = r.x1;
       }
-      if (!text.trim()) continue;
-      const first = line.items[0];
-      const last = line.items[line.items.length - 1];
-      const fm = mapFont(first.fontName);
-      const lineH_pt = Math.max.apply(null, line.items.map(i => i.size));
-      els.push({
-        type: 'text',
-        text,
-        x: mm(first.x0), y: mm(line.baseline - lineH_pt),
-        w: mm(last.x1 - first.x0), h: mm(lineH_pt),
-        fontFamily: fm.family, fontSizePt: lineH_pt,
-        bold: fm.bold, italic: fm.italic,
-        color: '#000000',
-        align: 'left', lineHeight: 1.25, letterSpacingPt: 0,
-      });
+      if (seg) segs.push(seg);
+
+      for (const s of segs) {
+        s.items.sort((a, b) => a.x0 - b.x0);
+        let text = '';
+        let prevX1 = null;
+        let pendingSpace = '';
+        const richParts = [];
+        for (const r of s.items) {
+          if (prevX1 !== null) {
+            const gap = r.x0 - prevX1;
+            // 间隙按半个字宽折算空格数（一个空格 ≈ 0.45 字号），上限 4 个
+            if (gap > r.size * 0.25) {
+              const n = Math.max(1, Math.min(4, Math.round(gap / (r.size * 0.45))));
+              pendingSpace = ' '.repeat(n);
+            }
+          }
+          const fm = mapFont(r.fontName);
+          // data-r 标记"解析原始富文本"，编辑时保护其样式不被剥离。
+          // 只锁定字体族/加粗/斜体；字号不写死 → 由元素级字号统一控制（改字号即时全局生效）
+          const st = 'font-family:' + fm.family + ';'
+            + (fm.bold ? 'font-weight:700;' : '') + (fm.italic ? 'font-style:italic;' : '');
+          richParts.push(pendingSpace + '<span data-r="1" style="' + st + '">' + escHtml(r.str) + '</span>');
+          text += pendingSpace + r.str;
+          pendingSpace = '';
+          prevX1 = r.x1;
+        }
+        if (!text.trim()) continue;
+        const first = s.items[0];
+        const last = s.items[s.items.length - 1];
+        const fm = mapFont(first.fontName);
+        const lineH_pt = s.size;
+        els.push({
+          type: 'text',
+          text,
+          rich: richParts.join(''),
+          x: mm(first.x0), y: mm(s.baseline - lineH_pt),
+          w: mm(last.x1 - first.x0), h: mm(lineH_pt),
+          fontFamily: fm.family, fontSizePt: lineH_pt,
+          bold: fm.bold, italic: fm.italic,
+          color: '#000000',
+          align: 'left', lineHeight: 1.25, letterSpacingPt: 0,
+        });
+      }
     }
     return els;
   }
