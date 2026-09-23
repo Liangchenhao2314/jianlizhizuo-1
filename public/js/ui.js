@@ -108,7 +108,14 @@ window.RS = window.RS || {};
     }
 
     h += '<div class="panel-title">文字样式</div>';
-    h += '<div class="field"><label>字体</label><select id="propFont">' + FONTS.map(f => '<option value="' + f + '"' + (el.fontFamily === f ? ' selected' : '') + '>' + f + '</option>').join('') + '</select></div>';
+    // 字体下拉：子集字体（g_xxx）显示真实名并保持原版；检测到的原版字体一并加入
+    const curFF = el.fontFamily || 'SimSun';
+    const isSubset = /^g_[A-Za-z0-9_]+$/i.test(curFF);
+    const fontOpts = [];
+    if (isSubset) fontOpts.push('<option value="' + esc(curFF) + '" selected>' + esc(el.fontReal || curFF) + '</option>');
+    FONTS.forEach(f => { fontOpts.push('<option value="' + esc(f) + '"' + (curFF === f ? ' selected' : '') + '>' + esc(f) + '</option>'); });
+    (RS.importers.getDetectedFonts() || []).forEach(d => { if (d && d !== curFF && !FONTS.includes(d)) fontOpts.push('<option value="' + esc(d) + '">' + esc(d) + '</option>'); });
+    h += '<div class="field"><label>字体</label><select id="propFont">' + fontOpts.join('') + '</select></div>';
     h += '<div class="prop-grid">';
     h += '<div class="field"><label>字号 (pt)</label><input type="number" id="propSize" value="' + (Math.round((el.fontSizePt || 10) * 100) / 100) + '" min="4" max="120"></div>';
     h += '<div class="field"><label>行高</label><input type="number" id="propLineH" step="0.05" min="0.8" max="4" value="' + (el.lineHeight || 1.25) + '"></div>';
@@ -401,7 +408,7 @@ window.RS = window.RS || {};
         if (!b) return;
         const f = b.dataset.f;
         let n = 0;
-        for (const p of RS.state.pages) for (const el of p.elements) if (el.type === 'text') { el.fontFamily = f; n++; }
+        for (const p of RS.state.pages) for (const el of p.elements) if (el.type === 'text') { el.fontFamily = f; el.fontReal = null; n++; }
         setActive(f);
         RS.render.renderAll();
         RS.commit();
@@ -1082,6 +1089,7 @@ window.RS = window.RS || {};
     toast,
     showLoading,
     hideLoading,
+    checkFit,
     openModal,
     confirmModal,
     switchTab,

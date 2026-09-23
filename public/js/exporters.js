@@ -32,7 +32,7 @@ window.RS = window.RS || {};
     if (el.type === 'text') {
       const span = document.createElement('span');
       span.innerHTML = el.rich || RS.render.textToHTML(el.text); // 导出保留选区局部格式（加粗/字号）
-      span.style.fontFamily = RS.render.fontStack(el.fontFamily);
+      span.style.fontFamily = RS.render.fontStack(el.fontFamily, el.fontReal); // 导出保留原版内嵌字形（g_xxx 已在 document.fonts 注册）
       span.style.fontSize = (el.fontSizePt || 10) + 'pt';
       if (el.bold) span.style.fontWeight = '700';
       if (el.italic) span.style.fontStyle = 'italic';
@@ -179,7 +179,8 @@ window.RS = window.RS || {};
     if (el.rotation) css.push('transform:rotate(' + el.rotation + 'deg)');
     let inner = '';
     if (el.type === 'text') {
-      css.push('font-family:' + (el.fontFamily ? '"' + el.fontFamily + '"' : '"SimSun"'));
+      // Word 导出：子集字体名在 Word 中无效 → 用真实字体名（el.fontReal）导出，保持外观接近原版
+      css.push('font-family:' + '"' + (el.fontReal || el.fontFamily || 'SimSun') + '", "Microsoft YaHei", sans-serif');
       css.push('font-size:' + (el.fontSizePt || 10) + 'pt');
       if (el.bold) css.push('font-weight:bold');
       if (el.italic) css.push('font-style:italic');

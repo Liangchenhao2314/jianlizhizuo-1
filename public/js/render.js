@@ -100,7 +100,7 @@ window.RS = window.RS || {};
       const span = document.createElement('span');
       span.className = 't';
       span.innerHTML = el.rich || textToHTML(el.text);
-      span.style.fontFamily = fontStack(el.fontFamily);
+      span.style.fontFamily = fontStack(el.fontFamily, el.fontReal);
       span.style.fontSize = pt2px(el.fontSizePt) + 'px';
       if (el.bold) span.style.fontWeight = '700';
       if (el.italic) span.style.fontStyle = 'italic';
@@ -143,9 +143,12 @@ window.RS = window.RS || {};
       .replace(/>/g, '&gt;')
       .replace(/\n/g, '<br>');
   }
-  function fontStack(f) {
+  function fontStack(f, real) {
     const fam = f || 'SimSun';
-    return '"' + fam + '", "Microsoft YaHei", "PingFang SC", sans-serif, serif';
+    // 子集字体名（g_xxx）已在 document.fonts 注册（PDF 内嵌字形）→ 优先使用；
+    // 真实字体名放第二位兜底（本机装有同名系统字体时更接近原版），再回退雅黑
+    return '"' + fam + '", ' + (real && real !== fam ? '"' + real + '", ' : '')
+      + '"Microsoft YaHei", "PingFang SC", sans-serif, serif';
   }
   function pt2px(pt) { return pt * 96 / 72; }
 

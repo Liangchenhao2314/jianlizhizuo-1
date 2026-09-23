@@ -101,15 +101,29 @@ window.RS = window.RS || {};
       floatBar.appendChild(b);
     };
 
-    // 字体
+    // 字体：子集字体（g_xxx）保持原版字形，显示真实名；检测到的原版字体也加入下拉
     const fontSel = document.createElement('select');
     fontSel.className = 'fb-sel fb-font';
     fontSel.title = '字体';
+    const curFF = el.fontFamily || 'SimSun';
+    const isSubset = /^g_[A-Za-z0-9_]+$/i.test(curFF);
+    if (isSubset) {
+      const o = document.createElement('option');
+      o.value = curFF; o.textContent = el.fontReal || curFF; o.selected = true;
+      fontSel.appendChild(o);
+    }
     FONTS.forEach(f => {
       const o = document.createElement('option');
       o.value = f; o.textContent = f;
-      if (el.fontFamily === f || (!el.fontFamily && f === 'SimSun')) o.selected = true;
+      if (curFF === f || (!el.fontFamily && f === 'SimSun')) o.selected = true;
       fontSel.appendChild(o);
+    });
+    (RS.importers.getDetectedFonts() || []).forEach(d => {
+      if (d && d !== curFF && !FONTS.includes(d)) {
+        const o = document.createElement('option');
+        o.value = d; o.textContent = d;
+        fontSel.appendChild(o);
+      }
     });
     fontSel.onchange = () => applyStyle({ fontFamily: fontSel.value });
     floatBar.appendChild(fontSel);
@@ -187,6 +201,7 @@ window.RS = window.RS || {};
       const el = RS.getEl(id);
       if (!el) continue;
       Object.assign(el, patch);
+      if ('fontFamily' in patch) el.fontReal = null; // 用户主动换字体 → 取消原版字体兜底
       if (el.type === 'text' || patch.dirty) markDirty(el);
     }
     if (editingEl) {
@@ -676,7 +691,7 @@ window.RS = window.RS || {};
     span.style.height = 'auto';
     node.style.height = 'auto';
     // 显式应用元素样式，保证输入文字与展示完全一致（所见即所得）
-    span.style.fontFamily = RS.render.fontStack(el.fontFamily);
+    span.style.fontFamily = RS.render.fontStack(el.fontFamily, el.fontReal);
     span.style.fontSize = RS.render.pt2px(el.fontSizePt) + 'px';
     span.style.fontWeight = el.bold ? '700' : 'normal';
     span.style.fontStyle = el.italic ? 'italic' : 'normal';

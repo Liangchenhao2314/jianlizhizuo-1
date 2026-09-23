@@ -72,21 +72,19 @@ window.RS = window.RS || {};
   }
 
   function mapFont(fontName) {
-    const out = { family: 'Microsoft YaHei', bold: false, italic: false };
+    const out = { family: 'Microsoft YaHei', real: null, bold: false, italic: false };
     const n = String(fontName || '');
-    // WPS 子集字体别名（g_dX_fY）：按编号取文档字体表里的真实字体
+    // WPS 子集字体别名（g_dX_fY）：pdf.js 渲染位图时已把该字体的内嵌字形
+    // 注册到 document.fonts（family 名 = 子集名）。直接用子集名做 font-family，
+    // 编辑/导出时字形与底图 100% 一致；新输入的字符由字体栈回退到雅黑。
     const alias = n.match(/^g_\w+_f(\d+)$/i);
     if (alias) {
       const real = docFonts[parseInt(alias[1], 10) - 1];
-      if (real) {
-        const hit = FONT_MAP.find(([re]) => re.test(real));
-        out.family = hit ? hit[1] : real;
-        if (/Bold|Heavy|Black|BoldItalic/i.test(real)) out.bold = true;
-        if (/Italic|Oblique/i.test(real)) out.italic = true;
-        return out;
-      }
-      // 扫描失败时的兜底：WPS 简历默认更接近雅黑，而不是宋体
-      out.family = docFonts.length ? 'Microsoft YaHei' : 'SimSun';
+      out.family = n;
+      out.real = real || null;
+      // 子集字体字形自带粗细/斜体，不再加 CSS weight（避免双重加粗）
+      out.bold = false;
+      out.italic = false;
       return out;
     }
     for (const [re, fam] of FONT_MAP) {
@@ -99,11 +97,29 @@ window.RS = window.RS || {};
     return out;
   }
 
+  /* 解析时收集检测到的原版真实字体名（供浮条下拉显示，如"等线/DengXian"） */
+  const detectedFonts = [];
+  function noteDetected(fm) { if (fm && fm.real && !detectedFonts.includes(fm.real)) detectedFonts.push(fm.real); }
+  function getDetectedFonts() { return detectedFonts.slice(); }
+
+  /* 导入新文档前清掉旧的内嵌字体注册（避免跨文档同名子集字体冲突） */
+  function clearDocFonts() {
+    try {
+      if (document.fonts) {
+        Array.from(document.fonts).forEach(f => {
+          if (/^g_[A-Za-z0-9_]+$/i.test(f.family)) document.fonts.delete(f);
+        });
+      }
+    } catch (e) {}
+    detectedFonts.length = 0;
+  }
+
   /* ================= PDF 导入 ================= */
   async function importPDF(file) {
     showLoading('正在解析 PDF，还原原版排版…');
     try {
       RS.historyReset();
+      clearDocFonts(); // 清掉上一次导入的内嵌字体注册
       const data = await file.arrayBuffer();
       scanDocFonts(data); // 还原 WPS 子集字体名（g_dX_fY → 真实字体）
       const pdf = await pdfjsLib.getDocument({ data }).promise;
@@ -259,6 +275,7 @@ window.RS = window.RS || {};
         const first = s.items[0];
         const last = s.items[s.items.length - 1];
         const fm = mapFont(first.fontName);
+        noteDetected(fm); // 收集原版真实字体名（浮条下拉显示用）
         const lineH_pt = s.size;
         els.push({
           type: 'text',
@@ -266,7 +283,7 @@ window.RS = window.RS || {};
           rich: richParts.join(''),
           x: mm(first.x0), y: mm(s.baseline - lineH_pt),
           w: mm(last.x1 - first.x0), h: mm(lineH_pt),
-          fontFamily: fm.family, fontSizePt: lineH_pt,
+          fontFamily: fm.family, fontReal: fm.real, fontSizePt: lineH_pt,
           bold: fm.bold, italic: fm.italic,
           color: '#000000',
           align: 'left', lineHeight: 1.25, letterSpacingPt: 0,
@@ -924,5 +941,7 @@ window.RS = window.RS || {};
     textToElements,
     extractImages,
     mapFont,
+    getDetectedFonts,
+    clearDocFonts,
   };
 })();
