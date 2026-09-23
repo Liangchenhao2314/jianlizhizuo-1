@@ -14,6 +14,7 @@ window.RS = window.RS || {};
   const MM2PX = 96 / 25.4;
   const pagesEl = document.getElementById('pages');
   const floatBar = document.getElementById('floatBar');
+  const ctxMenu = document.getElementById('ctxMenu');
   const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
   const FONTS = ['SimSun', 'SimHei', 'Microsoft YaHei', 'KaiTi', 'FangSong', 'Arial', 'Helvetica', 'Times New Roman', 'Calibri', 'Georgia', 'Courier New'];
 
@@ -829,9 +830,74 @@ window.RS = window.RS || {};
     document.addEventListener('selectionchange', () => {
       clearTimeout(selBarTimer);
       selBarTimer = setTimeout(() => {
-        if (selectionInEditing()) showSelBar(); else hideSelBar();
+        if (selectionInEditing()) {
+          showSelBar();
+          syncFloatSizeWithCaret(); // 浮条字号实时显示光标处字号（Word 语义）
+        } else hideSelBar();
       }, 50);
     });
+  }
+
+  /* 浮条字号框同步为光标所在文字的字号（pt） */
+  function syncFloatSizeWithCaret() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const r = sel.getRangeAt(0);
+    if (r.collapsed) return;
+    const host = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+    const el = host && host.closest ? host.closest('.el') : null;
+    const num = document.querySelector('#floatBar .fb-num');
+    if (!el || !num) return;
+    const fs = parseFloat(getComputedStyle(host).fontSize);
+    if (fs > 0) num.value = String(Math.round(fs * 72 / 96 * 100) / 100);
+  }
+
+  /* ================= 右键菜单（Word 式） ================= */
+  function hideCtx() { if (ctxMenu) { ctxMenu.classList.add('hidden'); ctxMenu.innerHTML = ''; } }
+
+  function ctxItem(label, fn, danger) {
+    const b = document.createElement('button');
+    b.textContent = label;
+    if (danger) b.classList.add('danger');
+    b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    b.addEventListener('click', () => { hideCtx(); fn(); });
+    return b;
+  }
+
+  function showCtx(x, y) {
+    if (!ctxMenu) return;
+    ctxMenu.innerHTML = '';
+    const ids = RS.state.selected.slice();
+    const el = RS.getEl(ids[ids.length - 1]);
+    if (!el) return;
+    const sep = () => { const d = document.createElement('div'); d.className = 'ctx-sep'; ctxMenu.appendChild(d); };
+
+    ctxMenu.appendChild(ctxItem('复制', () => { if (ids.length) RS.duplicate(ids); }));
+    ctxMenu.appendChild(ctxItem('删除', () => { RS.removeElements(ids.slice()); }, true));
+    ctxMenu.appendChild(ctxItem('置顶', () => { const id = ids[0]; if (id) RS.moveZ(id, 'top'); }));
+    ctxMenu.appendChild(ctxItem('置底', () => { const id = ids[0]; if (id) RS.moveZ(id, 'bottom'); }));
+
+    if (el.type === 'text') {
+      sep();
+      ctxMenu.appendChild(ctxItem('加粗', () => applyStyle({ bold: !el.bold })));
+      ctxMenu.appendChild(ctxItem('斜体', () => applyStyle({ italic: !el.italic })));
+      ctxMenu.appendChild(ctxItem('下划线', () => applyStyle({ underline: !el.underline })));
+      sep();
+      ctxMenu.appendChild(ctxItem('字号 +1pt', () => applyStyle({ fontSizePt: Math.max(4, Math.min(96, (el.fontSizePt || 10) + 1)) })));
+      ctxMenu.appendChild(ctxItem('字号 -1pt', () => applyStyle({ fontSizePt: Math.max(4, Math.min(96, (el.fontSizePt || 10) - 1)) })));
+      sep();
+      ctxMenu.appendChild(ctxItem('左对齐', () => applyStyle({ align: 'left' })));
+      ctxMenu.appendChild(ctxItem('居中', () => applyStyle({ align: 'center' })));
+      ctxMenu.appendChild(ctxItem('右对齐', () => applyStyle({ align: 'right' })));
+    } else if (el.type === 'image') {
+      sep();
+      ctxMenu.appendChild(ctxItem('更换图片', () => RS.ui.chooseImageFor(el.id)));
+    }
+
+    ctxMenu.classList.remove('hidden');
+    const w = ctxMenu.offsetWidth || 150, h = ctxMenu.offsetHeight || 200;
+    ctxMenu.style.left = Math.max(4, Math.min(window.innerWidth - w - 4, x)) + 'px';
+    ctxMenu.style.top = Math.max(4, Math.min(window.innerHeight - h - 4, y)) + 'px';
   }
 
   /* ================= 键盘 ================= */
@@ -842,11 +908,19 @@ window.RS = window.RS || {};
 
     if (mod && e.key.toLowerCase() === 'z') {
       e.preventDefault();
-      if (editingId) exitEdit(true);
+      if (editingId) {
+        // 编辑中：Word 语义 —— 先撤销打字（不退出编辑），保持光标在位
+        document.execCommand(e.shiftKey ? 'redo' : 'undo');
+        return;
+      }
       if (e.shiftKey) RS.redo(); else RS.undo();
       return;
     }
-    if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); if (editingId) exitEdit(true); RS.redo(); return; }
+    if (mod && e.key.toLowerCase() === 'y') {
+      e.preventDefault();
+      if (editingId) { document.execCommand('redo'); return; }
+      RS.redo(); return;
+    }
     if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); if (!inField && RS.state.selected.length) RS.duplicate(RS.state.selected.slice()); return; }
     if (e.key === 'Escape') {
       // 编辑中按 Esc：只退出编辑，保留选中（方便看清刚改到哪）；非编辑时取消选中
@@ -880,6 +954,19 @@ window.RS = window.RS || {};
   /* ================= 事件绑定 ================= */
   function init() {
     bindSelBar();
+    // 右键菜单（Word 式）：元素上右键显示；空白处隐藏（不拦截浏览器默认菜单）
+    pagesEl.addEventListener('contextmenu', (e) => {
+      const elNode = e.target.closest('.el');
+      if (!elNode) { hideCtx(); return; }
+      const el = RS.getEl(elNode.dataset.id);
+      if (!el || el.locked) { hideCtx(); return; }
+      e.preventDefault();
+      if (!RS.state.selected.includes(el.id)) select(el.id, false);
+      if (editingId) exitEdit(true);
+      showCtx(e.clientX, e.clientY);
+    });
+    document.addEventListener('mousedown', () => hideCtx());
+    window.addEventListener('scroll', hideCtx, true);
     pagesEl.addEventListener('mousedown', (e) => {
       const handleNode = e.target.closest('.handle');
       const elNode = e.target.closest('.el');
@@ -895,10 +982,11 @@ window.RS = window.RS || {};
       }
       const el = RS.getEl(elNode.dataset.id);
       if (!el) return;
-      if (el.locked) { select(el.id, e.shiftKey); return; }
+      const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+      if (el.locked) { select(el.id, additive); return; }
       if (editingId && editingId !== el.id) exitEdit(true);
-      if (!RS.state.selected.includes(el.id)) select(el.id, e.shiftKey);
-      else if (e.shiftKey) select(el.id, true);
+      if (!RS.state.selected.includes(el.id)) select(el.id, additive);
+      else if (additive) select(el.id, true);
 
       const inEdit = !!elNode.querySelector('[contenteditable="true"]');
       if (inEdit) {

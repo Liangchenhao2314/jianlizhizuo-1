@@ -207,6 +207,24 @@ body.hl .el-ghost { outline: 1px dashed rgba(37,99,235,.45); }
 #selBar button:hover { background: #3a4048; }
 #selBar .sep { width: 1px; height: 14px; background: #4a5158; margin: 0 3px; }
 
+/* 右键菜单（Word 式） */
+#ctxMenu {
+  position: fixed; z-index: 340; min-width: 150px; background: #fff;
+  border: 1px solid var(--line); border-radius: 9px; box-shadow: var(--shadow-lg);
+  padding: 5px; font-size: 12.5px; color: var(--ink);
+}
+#ctxMenu button {
+  display: block; width: 100%; text-align: left; border: 0; background: none;
+  padding: 7px 11px; border-radius: 6px; font-size: 12.5px; color: var(--ink); cursor: pointer;
+}
+#ctxMenu button:hover { background: var(--line-2); color: var(--primary-dark); }
+#ctxMenu button.danger { color: var(--danger); }
+#ctxMenu button.danger:hover { background: #fef2f2; }
+#ctxMenu .ctx-sep { height: 1px; background: var(--line-2); margin: 4px 3px; }
+
+/* 悬停行提示（参考文件：鼠标划过文字行有极淡高亮） */
+#pages .el-text:hover:not(.editing):not(.locked):not(.selected) { background: rgba(59,130,246,.05); }
+
 /* ============ 右侧面板 ============ */
 #panel {
   width: 336px; flex: 0 0 336px; background: var(--panel);
